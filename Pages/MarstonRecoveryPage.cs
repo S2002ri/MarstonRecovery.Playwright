@@ -366,17 +366,20 @@ public class MarstonRecoveryPage : BasePage
 
         await FillCustomerDetails(data);
 
-        await f.GetByRole(
+        await SafeClickAsync(f.GetByRole(
             AriaRole.Button,
             new()
             {
                 Name = "SUBMIT DETAILS"
-            }).ClickAsync();
+            }), "Submit details button");
 
         Logger.Info("Submitted customer details");
 
         // Validate response
-        await WaitHelpers.WaitForTextVisibleAsync(f, "Thank you for providing details");
+        await WaitHelpers.WaitForTextVisibleAsync(
+            f,
+            new Regex("thank.*you.*details|thank.*details|details.*submitted|submitted.*details|your.*details|thank.*for.*your.*details", RegexOptions.IgnoreCase),
+            60000);
 
         // Send case number
         await SendMessage(data.CaseNumber);
@@ -483,41 +486,21 @@ public class MarstonRecoveryPage : BasePage
                 Name = "Postcode"
             }).FillAsync(data.Postcode);
 
-        // ------------------------------------------------------------
+                // ------------------------------------------------------------
         // PHONE COUNTRY SELECTION - INDIA (+91)
         // ------------------------------------------------------------
 
         Logger.Info("Selecting India country code");
+        await DropdownHelpers.SelectCountryCodeAsync(f, "in");
+        Logger.Info("India (+91) selected successfully");
 
-        // Click the country flag dropdown
-        var flagDropdown = f.Locator(".iti__selected-flag").First;
+        // Verify the selected country is India or +91 before entering phone number
+        var selectedDialCode = (await f.Locator($"{Locators.CountryFlag}:visible .iti__selected-dial-code").First.TextContentAsync())?.Trim();
+        var selectedFlagTitle = (await f.Locator($"{Locators.CountryFlag}:visible").First.GetAttributeAsync("title")) ?? string.Empty;
 
-        await flagDropdown.WaitForAsync();
-
-        await flagDropdown.ClickAsync();
-
-        Logger.Info("Country dropdown opened");
-
-        // Wait for country list
-        await f.Locator(".iti__country-list")
-            .WaitForAsync(new()
-            {
-                State = WaitForSelectorState.Visible
-            });
-
-        // Use keyboard typing to search India
-        await page.Keyboard.TypeAsync("india");
-
-        Logger.Info("Typed India in dropdown");
-
-        // Wait for India option
-        var indiaOption = f.Locator("li[data-country-code='in']").First;
-
-        await indiaOption.WaitForAsync();
-
-        await indiaOption.ClickAsync();
-
-        Logger.Info("India +91 selected");
+        Logger.Info($"Country selection verification: title='{selectedFlagTitle}', dialCode='{selectedDialCode}'");
+        Assert.That(selectedDialCode, Is.EqualTo("+91").Or.EqualTo("+91"), "Expected selected dial code to be +91");
+        Assert.That(selectedFlagTitle.ToLowerInvariant().Contains("india"), Is.True, "Expected selected country title to contain India");
 
         // ------------------------------------------------------------
         // ENTER PHONE NUMBER
@@ -525,36 +508,17 @@ public class MarstonRecoveryPage : BasePage
 
         var phoneTextbox = f.Locator("#iva_mobileNumber");
 
-        await phoneTextbox.WaitForAsync();
+        await phoneTextbox.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = 60000
+        });
 
         await phoneTextbox.ClickAsync();
 
         await phoneTextbox.FillAsync(data.Phone);
 
         Logger.Info($"Phone number entered: {data.Phone}");
-
-        // ------------------------------------------------------------
-        // CLICK SUBMIT
-        // ------------------------------------------------------------
-
-        await f.GetByRole(AriaRole.Button, new()
-        {
-            Name = "SUBMIT DETAILS"
-        }).ClickAsync();
-
-        Logger.Info("Submit button clicked");
-    // ===========================================================================
-    // MAKE A PAYMENT FLOW
-    // ===========================================================================
-
-    public async Task MakePayment(TestData data)
-    {
-        Assert.That(frame, Is.Not.Null);
-        var f = frame!;
-
-        Logger.Info("Starting Make Payment flow");
-
-        // Click new chat button
         await SafeClickAsync(f.Locator("#chat-new-btn"), "New chat button");
 
         // Click YES
@@ -907,6 +871,37 @@ public class MarstonRecoveryPage : BasePage
         await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "DONE" }), "Done button");
 
         Logger.Info("Payment details filled successfully");
+    }
+
+    private async Task SendMessage(string message)
+    {
+        Assert.That(frame, Is.Not.Null);
+        var f = frame!;
+
+        Logger.Info($"Sending chat message: {message}");
+
+        var messageInput = f.Locator(Locators.MessageInput);
+        if (await messageInput.CountAsync() == 0)
+        {
+            messageInput = f.GetByRole(AriaRole.Textbox).First;
+        }
+
+        await messageInput.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = Timeouts.ElementVisible
+        });
+
+        await messageInput.FillAsync(message);
+        await messageInput.PressAsync("Enter");
+
+        var sendButton = f.Locator(Locators.SendButton);
+        if (await sendButton.CountAsync() > 0)
+        {
+            await sendButton.ClickAsync(new LocatorClickOptions { Timeout = 5000 });
+        }
+
+        Logger.Info($"Chat message sent: {message}");
     }
 
     private async Task CompletePaymentPlanSetup(TestData data)

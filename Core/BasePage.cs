@@ -62,7 +62,7 @@ public class BasePage
     /// <summary>
     /// Retry an action without return value
     /// </summary>
-    protected async Task RetryAsync(Func<Task> action, string actionName, int maxRetries = 3)
+    protected async Task RetryAsync(Func<Task> action, string actionName, int maxRetries = 1)
     {
         int attempt = 0;
         int delay = Timeouts.RetryInterval;
@@ -130,6 +130,26 @@ public class BasePage
             await locator.FillAsync(value);
             Logger.Info($"Filled {elementName} with: {value}");
         }, $"Fill {elementName}", maxRetries);
+    }
+
+    /// <summary>
+    /// Check if the locator is visible without throwing
+    /// </summary>
+    protected async Task<bool> SafeIsVisibleAsync(ILocator locator, int timeoutMs = -1)
+    {
+        try
+        {
+            await locator.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = timeoutMs > 0 ? timeoutMs : Timeouts.ElementVisible
+            });
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>

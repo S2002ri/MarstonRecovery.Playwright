@@ -1,6 +1,5 @@
 using Microsoft.Playwright;
-using MarstonRecovery.Tests.Constants;
-
+using MarstonRecovery.Tests.Constants;using System.Text.RegularExpressions;
 namespace MarstonRecovery.Tests.Utils;
 
 /// <summary>
@@ -97,6 +96,19 @@ public static class WaitHelpers
     {
         await frame.WaitForTimeoutAsync(500); // Small buffer
         await frame.GetByText(text).WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = timeoutMs ?? Timeouts.ElementVisible
+        });
+    }
+
+    /// <summary>
+    /// Wait for regex text to be visible in a frame
+    /// </summary>
+    public static async Task WaitForTextVisibleAsync(IFrame frame, Regex regex, int? timeoutMs = null)
+    {
+        await frame.WaitForTimeoutAsync(500); // Small buffer
+        await frame.GetByText(regex).WaitForAsync(new LocatorWaitForOptions
         {
             State = WaitForSelectorState.Visible,
             Timeout = timeoutMs ?? Timeouts.ElementVisible

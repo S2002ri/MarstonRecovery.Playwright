@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Playwright;
 using MarstonRecovery.Tests.Constants;
 
@@ -44,45 +45,82 @@ public static class DropdownHelpers
     public static async Task SelectCountryCodeAsync(IFrame frame, string countryCode, int? timeoutMs = null)
     {
         var timeout = timeoutMs ?? Timeouts.Dropdown;
-        
+        var countryCodeLower = countryCode.ToLower();
+
         try
         {
-            // Try to click the flag dropdown
-            var flagDropdown = frame.Locator(".iti__selected-flag").First;
-            await WaitHelpers.WaitForVisibleAsync(flagDropdown, timeout);
-            
-            try
+            // Ensure the phone input and its dropdown widget exist in the DOM
+            await frame.WaitForSelectorAsync("#iva_mobileNumber", new FrameWaitForSelectorOptions
             {
-                await flagDropdown.ClickAsync(new LocatorClickOptions { Force = true, Timeout = 5000 });
-                Logger.Info("Clicked country dropdown");
-            }
-            catch
+                State = WaitForSelectorState.Attached,
+                Timeout = timeout
+            });
+
+            var dropdownOpened = await frame.EvaluateAsync<bool>(@"() => {
+                const phone = document.querySelector('#iva_mobileNumber');
+                const wrapper = phone ? phone.closest('.iti') : document.querySelector('.iti');
+                const el = wrapper ? wrapper.querySelector('.iti__selected-flag') : document.querySelector('.iti__selected-flag');
+                if (!el) return false;
+                el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
+                ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(name => {
+                    el.dispatchEvent(new MouseEvent(name, { bubbles: true, cancelable: true, view: window }));
+                });
+                return true;
+            }");
+
+            if (!dropdownOpened)
             {
-                // Fallback to JavaScript click
-                await frame.EvaluateAsync("() => { const el = document.querySelector('.iti__selected-flag'); if (el) el.click(); }");
-                Logger.Info("Clicked country dropdown via JavaScript");
+                throw new InvalidOperationException("Could not open country dropdown");
             }
 
-            await frame.WaitForTimeoutAsync(500);
+            await frame.WaitForSelectorAsync(".iti__selected-flag[aria-expanded='true']", new FrameWaitForSelectorOptions
+            {
+                State = WaitForSelectorState.Attached,
+                Timeout = timeout
+            });
 
-            // Try to select the country option
-            var countryOption = frame.Locator($"li[data-country-code='{countryCode.ToLower()}']").First;
-            
+            await frame.WaitForSelectorAsync($"li[data-country-code='{countryCodeLower}']", new FrameWaitForSelectorOptions
+            {
+                State = WaitForSelectorState.Attached,
+                Timeout = timeout
+            });
+
+            var countryOption = frame.Locator($"li[data-country-code='{countryCodeLower}']").First;
             try
             {
-                await countryOption.ScrollIntoViewIfNeededAsync();
-                await countryOption.ClickAsync(new LocatorClickOptions { Force = true, Timeout = 5000 });
+                await countryOption.ClickAsync(new LocatorClickOptions { Force = true, Timeout = 10000 });
                 Logger.Info($"Selected country code: {countryCode}");
             }
             catch
             {
-                // Fallback to JavaScript click
-                var countryCodeLower = countryCode.ToLower();
-                await frame.EvaluateAsync($"() => {{ const el = document.querySelector(\"li[data-country-code='{countryCodeLower}']\"); if (el) el.click(); }}");
+                var selected = await frame.EvaluateAsync<bool>($"() => {{ const phone = document.querySelector('#iva_mobileNumber'); const wrapper = phone ? phone.closest('.iti') : document.querySelector('.iti'); const el = wrapper ? wrapper.querySelector(\"li[data-country-code='{countryCodeLower}' ]\") : document.querySelector(\"li[data-country-code='{countryCodeLower}' ]\"); if (!el) return false; el.click(); return true; }}");
+                if (!selected)
+                {
+                    throw new InvalidOperationException($"Could not select country option {countryCodeLower}");
+                }
                 Logger.Info($"Selected country code: {countryCode} via JavaScript");
             }
 
             await frame.WaitForTimeoutAsync(500);
+
+            var selectionInfo = await frame.EvaluateAsync<string>(@"() => {
+                const phone = document.querySelector('#iva_mobileNumber');
+                const wrapper = phone ? phone.closest('.iti') : document.querySelector('.iti');
+                const flag = wrapper ? wrapper.querySelector('.iti__selected-flag') : document.querySelector('.iti__selected-flag');
+                const dial = flag?.querySelector('.iti__selected-dial-code')?.textContent?.trim() ?? '';
+                const title = flag?.getAttribute('title') ?? '';
+                return JSON.stringify({ dial, title });
+            }");
+
+            using var json = JsonDocument.Parse(selectionInfo);
+            var dialCode = json.RootElement.GetProperty("dial").GetString() ?? string.Empty;
+            var title = json.RootElement.GetProperty("title").GetString() ?? string.Empty;
+            if (dialCode != "+91" && !title.ToLowerInvariant().Contains("india"))
+            {
+                throw new InvalidOperationException($"Country selection verification failed. Selected dial code='{dialCode}', title='{title}'");
+            }
+
+            Logger.Info($"Verified country selection: title='{title}', dialCode='{dialCode}'");
         }
         catch (Exception ex)
         {
