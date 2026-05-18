@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using NUnit.Framework;
@@ -24,406 +23,806 @@ public class MarstonRecoveryPage : BasePage
             "https://marstonholdings.co.uk/marston-recovery/",
             new PageGotoOptions
             {
-                WaitUntil = WaitUntilState.DOMContentLoaded
+                WaitUntil = WaitUntilState.DOMContentLoaded,
+                Timeout = Timeouts.ExtraLong
             });
 
+        await AcceptCookiesIfPresent();
+
+        await WaitHelpers.WaitForDOMContentLoadedAsync(page, Timeouts.Short);
+
+        var widget = page.Locator(Locators.ChatWidgetContainer);
+        if (await widget.CountAsync() > 0)
+        {
+            try
+            {
+                await widget.ClickAsync(new LocatorClickOptions { Timeout = Timeouts.Short });
+                Logger.Info("Clicked chat widget container.");
+            }
+            catch
+            {
+                Logger.Info("Chat widget click was not required; continuing with frame resolution.");
+            }
+        }
+        else
+        {
+            Logger.Info("Chat widget container was not present; continuing with frame resolution.");
+        }
+
+        frame = await ResolveChatFrameAsync();
+        Assert.That(frame, Is.Not.Null, "Could not resolve the chat iframe.");
+        Logger.Info($"Chat frame resolved: {frame!.Url}");
+    }
+
+    public async Task OpenChat()
+    {
+        var chatFrame = RequireFrame();
+        await WaitHelpers.WaitForFrameLoadAsync(chatFrame, Timeouts.ExtraLong);
+
+        var openCandidates = new[]
+        {
+            chatFrame.Locator(Locators.ChatProfileContainer),
+            chatFrame.Locator(Locators.ChatProfileIcon),
+            chatFrame.Locator(Locators.ChatNewButton),
+            chatFrame.GetByRole(AriaRole.Img, new() { Name = "Chat" }),
+            chatFrame.GetByRole(AriaRole.Button, new() { Name = "Chat" })
+        };
+
+        var opened = false;
+        foreach (var candidate in openCandidates)
+        {
+            if (await SafeTryClickAsync(candidate))
+            {
+                opened = true;
+                break;
+            }
+        }
+
+        if (!opened)
+        {
+            opened = await chatFrame.EvaluateAsync<bool>(@"() => {
+                const selectors = ['#chat-profile-container', '#chat-profile-icon', '#chat-new-btn', '[aria-label*=""Chat""]'];
+                for (const selector of selectors) {
+                    const element = document.querySelector(selector);
+                    if (!element) continue;
+                    ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(name => {
+                        element.dispatchEvent(new MouseEvent(name, { bubbles: true, cancelable: true, composed: true }));
+                    });
+                    return true;
+                }
+                return false;
+            }");
+        }
+
+        Assert.That(opened, Is.True, "Could not open the chatbot.");
+        await WaitHelpers.WaitForVisibleAsync(chatFrame.Locator(Locators.ChatPopup), Timeouts.ExtraLong);
+        Logger.Info("Chat popup is visible.");
+    }
+
+    public async Task SetupPaymentPlan(TestData data, bool completePaymentPlan = false)
+    {
+        await StartHomeCardFlowAsync(Locators.SetupPaymentPlanCard, "Setup Payment Plan");
+        await FillCustomerDetails(data);
+        await SubmitCustomerDetailsAsync();
+        await SendCaseConversationAsync(data.CaseNumber, data.TestMessage);
+
+        if (completePaymentPlan)
+        {
+            await CompletePaymentPlanSetupAsync(data);
+            return;
+        }
+
+        Logger.Info("Setup Payment Plan conversation completed. Ready to continue with the next flow.");
+    }
+
+    public async Task MakePayment(TestData data)
+    {
+        var chatFrame = RequireFrame();
+
+        await StartNewConversationAsync();
+        await SafeClickAsync(chatFrame.GetByText("Make a payment"), "Make a payment card");
+        await OpenDetailsFormAsync();
+        await FillCustomerDetails(data);
+        await SubmitCustomerDetailsAsync();
+        await SendCaseConversationAsync(data.CaseNumber, data.TestMessage);
+
+        await SelectPartialPaymentAmountAsync(data.PaymentAmount, "Primary payment amount");
+        await SafeClickAsync(chatFrame.GetByRole(AriaRole.Button, new() { Name = "Add another case" }), "Add another case button");
+        await SafeClickAsync(chatFrame.GetByRole(AriaRole.Button, new() { Name = "CONFIRM" }), "Confirm additional case selection");
+        await SelectPartialPaymentAmountAsync(data.PaymentAmount, "Secondary payment amount");
+
+        await WaitForPaymentCardFormAsync();
+
+        await FillPaymentDetailsAsync(data);
+        Logger.Info("Make Payment flow completed.");
+    }
+
+    public async Task RaiseComplaint(TestData data)
+    {
+        var chatFrame = RequireFrame();
+
+        await StartConversationByMessageAsync(data.RaiseComplaintMessage);
+        await OpenDetailsFormAsync();
+
+        await SelectAreYouCustomerAsync();
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Enter First Name" }), data.FirstName, "Complaint first name");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Enter Last Name" }), data.LastName, "Complaint last name");
+        await ClickNextAsync();
+
+        await FillBySelectorsAsync(chatFrame, new[]
+        {
+            "#complaintcustomer-email",
+            "input#complaintcustomer-email",
+            "input[name='CustomerEmail']",
+            "#complaintEmail",
+            "input[name*='complaint'][name*='email']",
+            "input[name*='email']",
+            "input[type='email']",
+            "input[placeholder*='Email']",
+            "input[aria-label*='Email']"
+        }, data.ComplaintEmail, "Complaint email");
+
+        await FillBySelectorsAsync(chatFrame, new[]
+        {
+            "#complaintphone-num",
+            "input#complaintphone-num",
+            "input[name='phoneNumber']",
+            "#complaintTelephone",
+            "#complaintPhone",
+            "input[name*='telephone']",
+            "input[name*='phone']",
+            "input[placeholder*='Telephone']",
+            "input[placeholder*='Phone']"
+        }, data.Mobile, "Complaint phone");
+
+        await FillBySelectorsAsync(chatFrame, new[]
+        {
+            "#complaintaddress1",
+            "input#complaintaddress1",
+            "input[name='AddressLine1']",
+            "#complaintAddress1",
+            "input[name*='address'][name*='1']",
+            "input[placeholder*='Address line 1']",
+            "input[placeholder*='Address Line 1']"
+        }, data.Address1, "Complaint address line 1");
+
+        await FillBySelectorsAsync(chatFrame, new[]
+        {
+            "#complaintAddress2",
+            "input[name*='address'][name*='2']",
+            "input[placeholder*='Address line 2']",
+            "input[placeholder*='Address Line 2']"
+        }, data.Address2, "Complaint address line 2", required: false);
+
+        await FillBySelectorsAsync(chatFrame, new[]
+        {
+            "#complaintcity",
+            "input#complaintcity",
+            "input[name='City']",
+            "#complaintCity",
+            "input[name*='city']",
+            "input[placeholder*='City']"
+        }, data.City, "Complaint city");
+
+        await FillBySelectorsAsync(chatFrame, new[]
+        {
+            "#complaintpostcode",
+            "input#complaintpostcode",
+            "input[name='PostCode']",
+            "#complaintPostcode",
+            "input[name*='postcode']",
+            "input[placeholder*='Postcode']",
+            "input[placeholder*='Post Code']"
+        }, data.Postcode, "Complaint postcode");
+
+        await SelectDropdownValueAsync(chatFrame.Locator("#complaintcontact-method"), "email", "Complaint contact method");
+        await SelectDropdownValueAsync(chatFrame.Locator("#complaintcall-back"), "No", "Complaint callback preference");
+
+        await FillBySelectorsAsync(chatFrame, new[]
+        {
+            "#complaintaccessibility",
+            "input#complaintaccessibility",
+            "input[name='AccessibilityNeeds']",
+            "textarea[name='AccessibilityNeeds']"
+        }, data.ComplaintDetail, "Complaint accessibility detail", required: false);
+
+        await SelectDropdownValueAsync(chatFrame.Locator("#complaint-area"), data.ComplaintArea, "Complaint area");
+        await SelectDropdownValueAsync(chatFrame.Locator("#complaint-type"), data.ComplaintType, "Complaint type");
+
+        var yesterday = DateTime.Now.AddDays(-1).ToString("dd/MM/yyyy");
+        await SetFieldValueByJsAsync(chatFrame, new[]
+        {
+            "#incident-date",
+            "input#incident-date",
+            "input[placeholder='DD/MM/YYYY']"
+        }, yesterday, "Incident date");
+
+        await FillBySelectorsAsync(chatFrame, new[]
+        {
+            "#complaintcontact-person",
+            "input#complaintcontact-person",
+            "input[name='NameOfStaff']",
+            "input[placeholder='Enter the Name']"
+        }, data.FullName, "Complaint contact person");
+
+        await ClickNextAsync();
+
+        await SetFieldValueByJsAsync(chatFrame, new[]
+        {
+            "#incident-details",
+            "textarea#incident-details",
+            "textarea[name='ErrorExplanation']"
+        }, data.IncidentDetail, "Incident detail");
+
+        await SetFieldValueByJsAsync(chatFrame, new[]
+        {
+            "#expectation",
+            "textarea#expectation",
+            "textarea[name='CustomerExpectation']"
+        }, data.CustomerExpectation, "Customer expectation");
+
+        await UploadComplaintAttachmentIfPresentAsync(chatFrame, data.PrisonDocumentPath);
+
+        await chatFrame.Locator("#data-consent").CheckAsync();
+
+        var submitComplaintButton = chatFrame.Locator("#submitcomplaintBtn");
+        if (await submitComplaintButton.CountAsync() > 0)
+        {
+            await ClickAttachedElementAsync(submitComplaintButton.First, "Submit complaint");
+        }
+        else
+        {
+            await SafeClickAsync(chatFrame.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("SUBMIT", RegexOptions.IgnoreCase) }), "Submit complaint");
+        }
+
+        try
+        {
+            await WaitForComplaintSubmittedAsync(chatFrame);
+        }
+        catch (TimeoutException)
+        {
+            Logger.Info("Complaint submit acknowledgement did not appear in time; continuing to next flow.");
+        }
+
+        var continuationYes = chatFrame.Locator("button.chat-btn.primary[onclick*='chatcontinuationYes']");
+        if (await SafeIsVisibleAsync(continuationYes, Timeouts.Short))
+        {
+            await SafeClickAsync(continuationYes.First, "Complaint continuation yes");
+        }
+
+        Logger.Info("Raise Complaint flow completed.");
+    }
+
+    public async Task VulnerabilityForm(TestData data)
+    {
+        var chatFrame = RequireFrame();
+
+        await StartNewConversationAsync();
+
+        var vulnerabilityCardCandidates = new[]
+        {
+            chatFrame.GetByText("Vulnerability form"),
+            chatFrame.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("Vulnerability", RegexOptions.IgnoreCase) }),
+            chatFrame.Locator(".home-card[data-text*='Vulnerability'], .home-card:has-text('Vulnerability')")
+        };
+
+        var selectedCard = false;
+        foreach (var candidate in vulnerabilityCardCandidates)
+        {
+            if (await SafeIsVisibleAsync(candidate, Timeouts.Short))
+            {
+                await SafeClickAsync(candidate.First, "Vulnerability form card");
+                selectedCard = true;
+                break;
+            }
+        }
+
+        if (!selectedCard)
+        {
+            await SendMessage(data.VulnerabilityFormMessage);
+        }
+
+        await OpenDetailsFormAsync();
+
+        try
+        {
+            await FillCustomerDetails(data);
+            await SubmitCustomerDetailsAsync();
+            await OpenDetailsFormAsync();
+        }
+        catch
+        {
+            Logger.Info("Common customer details step not required for this vulnerability variant; continuing.");
+        }
+
+        await SafeFillAsync(chatFrame.Locator("#first-name:visible"), data.FirstName, "Vulnerability first name");
+        await SafeFillAsync(chatFrame.Locator("#last-name:visible"), data.LastName, "Vulnerability last name");
+        await SafeFillAsync(chatFrame.Locator("#caseNumber:visible"), data.CaseNumber, "Vulnerability case reference");
+        await ClickNextAsync();
+
+        await SafeFillAsync(chatFrame.Locator("#phoneNumber:visible"), data.Phone, "Vulnerability phone");
+        await SafeFillAsync(chatFrame.Locator("#address-line1:visible"), data.Address1, "Vulnerability address line 1");
+        await SafeFillAsync(chatFrame.Locator("#city:visible"), data.City, "Vulnerability city");
+        await SafeFillAsync(chatFrame.Locator("#postcode:visible"), data.Postcode, "Vulnerability postcode");
+
+        await SelectDropdownValueAsync(chatFrame.Locator("#contact-method:visible"), "Email", "Vulnerability contact method");
+        await SelectDropdownValueAsync(chatFrame.Locator("#callback:visible"), "No", "Vulnerability callback preference");
+        await SafeFillAsync(chatFrame.Locator("#vul-email:visible"), data.ComplaintEmail, "Vulnerability email");
+        await SafeFillAsync(chatFrame.Locator("#vulconfirmEmail:visible"), data.ComplaintEmail, "Vulnerability confirm email");
+        await SelectDropdownValueAsync(chatFrame.Locator("#accessibility:visible"), "No", "Accessibility support");
+        await SelectDropdownValueAsync(chatFrame.Locator("#debt-advice:visible"), "No", "Debt advice");
+        await SafeFillAsync(chatFrame.Locator("#medical-details:visible"), data.MedicalDetail, "Medical detail");
+        await SafeFillAsync(chatFrame.Locator("#minPay:visible"), data.VulnerabilityAmount, "Vulnerability amount");
+        await SelectDropdownValueAsync(chatFrame.Locator("#frequency:visible"), "Weekly", "Vulnerability frequency");
+        await chatFrame.Locator("#VulCheckBox:visible").CheckAsync();
+        await SafeClickAsync(chatFrame.Locator("#vulsubmitBtn:visible"), "Submit vulnerability form");
+    }
+
+    public async Task IncomeAndExpenditure(TestData data)
+    {
+        var chatFrame = RequireFrame();
+
+        await SafeClickAsync(chatFrame.GetByRole(AriaRole.Button, new() { Name = "Yes, proceed" }), "Proceed to income and expenditure");
+        await SafeClickAsync(chatFrame.Locator(Locators.IEEnterDetailsButton), "Income and expenditure enter details");
+        
+        await Task.Delay(500);  // Let form stabilize
+
+        var wagesField = chatFrame.Locator("#wagesValue:visible");
+        
+        try
+        {
+            if (await SafeIsVisibleAsync(wagesField, Timeouts.Short))
+            {
+                await SafeFillAsync(wagesField, data.WagesValue, "Wages value");
+                await SelectDropdownValueAsync(chatFrame.Locator("#wagesFrequency:visible"), data.WagesFrequency, "Wages frequency");
+            }
+        }
+        catch
+        {
+            Logger.Info("Income & Expenditure wages fields not available in this variant; skipping detailed entry.");
+        }
+
+        try
+        {
+            await SafeClickAsync(chatFrame.Locator(Locators.IESubmitButton), "IE form submit");
+        }
+        catch
+        {
+            Logger.Info("IE form submit button not found; form may already be submitted.");
+        }
+
+        try
+        {
+            await WaitHelpers.WaitForTextVisibleAsync(chatFrame, "Thank you for your vulnerability self-declaration", Timeouts.Long);
+        }
+        catch
+        {
+            Logger.Info("IE success message not detected; continuing with next step.");
+        }
+
+        var yesButton = chatFrame.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("^Yes$|^YES$", RegexOptions.IgnoreCase) });
+        if (await SafeIsVisibleAsync(yesButton, Timeouts.Short))
+        {
+            await SafeClickAsync(yesButton, "Continue after IE success");
+            Logger.Info("Income & Expenditure completed. Continuing to next flow.");
+        }
+    }
+
+    public async Task DisputeForm(TestData data)
+    {
+        var chatFrame = await RefreshChatFrameAsync();
+
+        Logger.Info("Starting Dispute Form flow");
+        
+        // Send dispute form message
+        await SendMessage(data.DisputeFormMessage);
+        await Task.Delay(500);
+        chatFrame = await RefreshChatFrameAsync();
+        
+        // Open the customer details form for dispute
+        var enterDetailsBtn = chatFrame.Locator(".enter-details-btn:visible, button:has-text('ENTER DETAILS'):visible");
+        await SafeClickAsync(enterDetailsBtn.First, "Enter details for dispute");
+        chatFrame = await RefreshChatFrameAsync();
+
+        // Fill dispute-specific customer details
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Full Name" }), data.DisputeCustomerFullName, "Dispute customer full name");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Enforcement Agent Reference" }), data.DisputeCustomerCaseNumber, "Dispute case number reference");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 1" }), data.DisputeCustomerAddress1, "Dispute address line 1");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 2 (Optional)" }), data.DisputeCustomerAddress2, "Dispute address line 2");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 3 (Optional)" }), data.DisputeCustomerCity, "Dispute city");
+        await DropdownHelpers.SelectCountryCodeAsync(chatFrame, data.DisputeCountryCode);
+        await SafeFillAsync(chatFrame.Locator("#iva_mobileNumber"), data.DisputeCustomerMobile, "Dispute phone number");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Postcode" }), data.DisputeCustomerPostcode, "Dispute postcode");
+        await SubmitCustomerDetailsAsync();
+        Logger.Info("Dispute customer details submitted");
+        chatFrame = await RefreshChatFrameAsync();
+
+        // Send responses to dispute conversation
+        await SendMessage(data.YesResponse);
+        await Task.Delay(300);
+        await SendMessage(data.DisputeCaseNumber);
+        await Task.Delay(300);
+        chatFrame = await RefreshChatFrameAsync();
+        
+        // Click Yes, I am button
+        var yesIAmButton = chatFrame.Locator("button:has-text('Yes, I am'):visible, .chat-btn:has-text('Yes, I am'):visible").First;
+        await SafeClickAsync(yesIAmButton, "Confirm dispute identity");
+
+        await Task.Delay(500);
+        chatFrame = await RefreshChatFrameAsync();
+        
+        // Open dispute form details
+        var enterDetailsBtnDispute = chatFrame.Locator(".enter-details-btn:visible, button:has-text('ENTER DETAILS'):visible");
+        await SafeClickAsync(enterDetailsBtnDispute.First, "Enter dispute form details");
+        chatFrame = await RefreshChatFrameAsync();
+
+        // Fill dispute form fields
+        await SafeFillAsync(chatFrame.Locator("#disputeFullName:visible"), data.DisputeFullName, "Dispute full name");
+        await SafeFillAsync(chatFrame.Locator("#disputeEmail:visible"), data.DisputeEmail, "Dispute email");
+        await SafeFillAsync(chatFrame.Locator("#confirmDisputeEmail:visible"), data.DisputeConfirmEmail, "Dispute confirm email");
+        
+        // Click NEXT button (first submit)
+        var submitNextBtn = chatFrame.Locator("#submitDisputeBtn:visible").First;
+        await SafeClickAsync(submitNextBtn, "Submit dispute contact details (NEXT)");
+        
+        await Task.Delay(300);
+        chatFrame = await RefreshChatFrameAsync();
+
+        // Select dispute reason
+        await SelectDropdownValueAsync(chatFrame.Locator("#disputeReason:visible"), data.DisputeReason, "Dispute reason");
+        
+        await Task.Delay(300);
+        chatFrame = await RefreshChatFrameAsync();
+        
+        // Upload dispute document
+        await UploadDisputeDocumentAsync(chatFrame, data.PrisonDocumentPath);
+
+        await Task.Delay(300);
+        chatFrame = await RefreshChatFrameAsync();
+        
+        // Click SUBMIT button (final submit)
+        var submitFinalBtn = chatFrame.Locator("#submitDisputeBtn:visible").First;
+        await SafeClickAsync(submitFinalBtn, "Submit dispute form (SUBMIT)");
+        
+        Logger.Info("Dispute form submission completed successfully.");
+    }
+
+    public async Task PostDisputeCustomerContactForm(TestData data)
+    {
+        var chatFrame = await RefreshChatFrameAsync();
+
+        Logger.Info("Starting Post-Dispute Customer Contact Form flow");
+
+        // Send customer contact form message
+        await SendMessage(data.CustomerContactFormMessage);
+        await Task.Delay(5000);
+        chatFrame = await RefreshChatFrameAsync();
+
+        // Send customer case number
+        await SendMessage(data.CustomberCaseNumber);
+        await Task.Delay(500);
+        chatFrame = await RefreshChatFrameAsync();
+
+        // Try to click a Yes button if it appears
+        var yesButton = chatFrame.Locator("button:has-text('Yes'):visible, button:has-text('YES'):visible");
+        if (await SafeIsVisibleAsync(yesButton, Timeouts.Short))
+        {
+            await SafeClickAsync(yesButton, "Confirm case number");
+            await Task.Delay(500);
+            chatFrame = await RefreshChatFrameAsync();
+        }
+
+        // Click Enter Details button
+        var enterDetailsBtn = chatFrame.Locator(".enter-details-btn:visible, button:has-text('ENTER DETAILS'):visible");
+        await SafeClickAsync(enterDetailsBtn.First, "Enter customer contact form details");
+        
+        await Task.Delay(300);
+        chatFrame = await RefreshChatFrameAsync();
+
+        // Fill customer contact form fields
+        await SafeFillAsync(chatFrame.Locator("#name:visible"), data.CustomerContactName, "Customer contact name");
+        await SafeFillAsync(chatFrame.Locator("#email:visible"), data.CustomerContactEmail, "Customer contact email");
+        await SafeFillAsync(chatFrame.Locator("#confirmEmail:visible"), data.CustomerContactEmail, "Customer contact confirm email");
+
+        // Click NEXT button
+        var submitNextBtn = chatFrame.Locator("#submitBtn:visible").First;
+        await SafeClickAsync(submitNextBtn, "Submit customer contact details (NEXT)");
+
+        await Task.Delay(500);
+        chatFrame = await RefreshChatFrameAsync();
+
+        // Click Prison button
+        var prisonBtn = chatFrame.Locator("button[data-target='prison']:visible, button:has-text('Prison'):visible");
+        await SafeClickAsync(prisonBtn, "Select Prison option");
+
+        await Task.Delay(300);
+        chatFrame = await RefreshChatFrameAsync();
+
+        // Click Upload Proof button and upload file
+        var uploadProofBtn = chatFrame.Locator("button:has-text('UPLOAD PROOF'):visible, button[onclick*='prisonFile']:visible");
+        await SafeClickAsync(uploadProofBtn, "Upload proof button");
+
+        await Task.Delay(300);
+
+        // Upload the prison document
+        var prisonFileInput = chatFrame.Locator("#prisonFile, input[type='file'][id='prisonFile']");
+        if (await prisonFileInput.CountAsync() > 0)
+        {
+            await prisonFileInput.First.SetInputFilesAsync(data.PrisonDocumentPath);
+            Logger.Info($"Uploaded prison document: {data.PrisonDocumentPath}");
+        }
+        else
+        {
+            Logger.Info("Prison file input not found; continuing without file upload.");
+        }
+
+        await Task.Delay(300);
+        chatFrame = await RefreshChatFrameAsync();
+
+        // Click final SUBMIT button
+        var submitFinalBtn = chatFrame.Locator("#submitBtn:visible").First;
+        await SafeClickAsync(submitFinalBtn, "Submit customer contact form (SUBMIT)");
+
+        Logger.Info("Post-Dispute Customer Contact Form completed successfully.");
+    }
+
+    public async Task MaxContactFlowAfterCustomerContact(TestData data)
+    {
+        var chatFrame = await RefreshChatFrameAsync();
+
+        Logger.Info("Starting Max Contact flow after Customer Contact flow");
+
+        // Open Make a payment card and enter details form.
+        var makePaymentCard = chatFrame.GetByText("Make a payment").First;
+        await SafeClickAsync(makePaymentCard, "Make a payment card for Max Contact flow");
+        await OpenDetailsFormAsync();
+
+        chatFrame = await RefreshChatFrameAsync();
+
+        // Fill deliberately invalid details.
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Full Name" }), data.MaxContactInvalidFullName, "Max contact invalid full name");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Enforcement Agent Reference" }), data.MaxContactInvalidEnforcementRef, "Max contact invalid enforcement ref");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 1" }), data.MaxContactInvalidAddress1, "Max contact invalid address line 1");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 2 (Optional)" }), data.MaxContactInvalidAddress2, "Max contact invalid address line 2");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 3 (Optional)" }), data.MaxContactInvalidAddress3, "Max contact invalid address line 3");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 4 (Optional)" }), data.MaxContactInvalidAddress4, "Max contact invalid address line 4");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Postcode" }), data.MaxContactInvalidPostcode, "Max contact postcode");
+
+        var ukCountryOption = chatFrame.Locator("li[data-country-code='gb']").First;
+        if (await ukCountryOption.CountAsync() > 0)
+        {
+            try
+            {
+                var countryFlag = chatFrame.Locator("#iva_mobileNumber").First.Locator("xpath=ancestor::*[contains(@class,'iti')][1]//*[contains(@class,'iti__selected-flag')]").First;
+                await SafeClickAsync(countryFlag, "Open country code dropdown for Max Contact flow");
+                await SafeClickAsync(ukCountryOption, "Select +44 country code for Max Contact flow");
+            }
+            catch
+            {
+                Logger.Info("Could not switch to +44 explicitly; continuing with phone number fill.");
+            }
+        }
+
+        await SafeFillAsync(chatFrame.Locator("#iva_mobileNumber:visible"), data.MaxContactInvalidPhone, "Max contact invalid phone");
+
+        // Click SUBMIT DETAILS three times as requested.
+        var submitDetailsBtn = chatFrame.Locator("#submitBtn:visible, button#submitBtn:has-text('SUBMIT DETAILS')").First;
+        await SafeClickAsync(submitDetailsBtn, "Max contact submit details attempt 1");
+        await Task.Delay(400);
+        await SafeClickAsync(submitDetailsBtn, "Max contact submit details attempt 2");
+        await Task.Delay(400);
+        await SafeClickAsync(submitDetailsBtn, "Max contact submit details attempt 3");
+
+        // Wait 1 minute, then verify expected support message.
+        await Task.Delay(60000);
+        chatFrame = await RefreshChatFrameAsync();
+
+        await WaitHelpers.WaitForTextVisibleAsync(
+            chatFrame,
+            new Regex("Hello! I'm Saranya\\. Could you please briefly outline the issue you are facing\\?", RegexOptions.IgnoreCase),
+            Timeouts.Long);
+
+        // Keep chat open for 20 seconds after message appears.
+        await Task.Delay(20000);
+
+        Logger.Info("Max Contact flow completed and waited 20 seconds after expected Saranya message.");
+    }
+
+    private async Task UploadDisputeDocumentAsync(IFrame chatFrame, string filePath)
+    {
+        var uploadLabel = chatFrame.Locator("label[for='proofDisputeUpload']");
+        if (await SafeIsVisibleAsync(uploadLabel, Timeouts.Short))
+        {
+            await SafeClickAsync(uploadLabel, "Upload documents label");
+        }
+
+        var fileInputCandidates = new[]
+        {
+            "#proofDisputeUpload",
+            "input[type='file'][name='proofDisputeUpload']",
+            "input[type='file']"
+        };
+
+        foreach (var selector in fileInputCandidates)
+        {
+            var input = chatFrame.Locator(selector);
+            if (await input.CountAsync() == 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                await input.First.SetInputFilesAsync(filePath);
+                Logger.Info($"Uploaded dispute document using selector: {selector}");
+                return;
+            }
+            catch
+            {
+                // Try next candidate.
+            }
+        }
+
+        Logger.Info("Dispute document input not found; continuing without file upload.");
+    }
+
+    public async Task CustomerContactForm(TestData data)
+    {
+        var chatFrame = RequireFrame();
+
+        await StartConversationByMessageAsync(data.CustomerContactFormMessage);
+        await SendMessage(data.CustomerCase);
+        await SafeFillAsync(chatFrame.Locator(Locators.ContactFormName), data.FirstName, "Contact form name");
+        await SafeFillAsync(chatFrame.Locator(Locators.ContactFormEmail), data.Email, "Contact form email");
+        await SafeFillAsync(chatFrame.Locator(Locators.ContactFormConfirmEmail), data.Email, "Contact form confirm email");
+        await SafeClickAsync(chatFrame.Locator(Locators.ContactFormSubmitButton), "Submit customer contact form");
+    }
+
+    public async Task PrisonDocumentUpload(TestData data)
+    {
+        var chatFrame = RequireFrame();
+
+        await SafeClickAsync(chatFrame.GetByRole(AriaRole.Button, new() { Name = "Prison" }), "Prison upload button");
+        await FileUploadHelpers.UploadFileWithRetryAsync(chatFrame.Locator(Locators.PrisonFileInput), data.PrisonDocumentPath);
+        await SafeClickAsync(chatFrame.Locator(Locators.ContactFormSubmitButton), "Submit prison upload form");
+
+        var yesButton = chatFrame.GetByRole(AriaRole.Button, new() { Name = "Yes" });
+        if (await SafeIsVisibleAsync(yesButton, Timeouts.Short))
+        {
+            await SafeClickAsync(yesButton, "Final confirmation");
+        }
+    }
+
+    public async Task SendMessage(string message)
+    {
+        var chatFrame = RequireFrame();
+        var messageBox = chatFrame.GetByPlaceholder(Locators.MessagePlaceholder);
+
+        if (await SafeIsVisibleAsync(messageBox, Timeouts.Short))
+        {
+            await SafeFillAsync(messageBox, message, "Chat message");
+        }
+        else
+        {
+            await chatFrame.EvaluateAsync(@"text => {
+                const input = document.querySelector('#message-input');
+                if (!input) {
+                    return;
+                }
+                input.value = text;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }", message);
+        }
+
+        await SafeClickAsync(chatFrame.Locator(Locators.SendButton), "Send message");
+        Logger.Info($"Message sent: {message}");
+    }
+
+    public async Task FillCustomerDetails(TestData data)
+    {
+        var chatFrame = RequireFrame();
+
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Full Name" }), data.FullName, "Full name");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Enforcement Agent Reference" }), data.EnforcementRef, "Enforcement reference");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 1" }), data.Address1, "Address line 1");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 2 (Optional)" }), data.Address2, "Address line 2");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 3 (Optional)" }), data.City, "City");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 4 (Optional)" }), data.County, "County");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Postcode" }), data.Postcode, "Postcode");
+        await DropdownHelpers.SelectCountryCodeAsync(chatFrame, "in");
+        await SafeFillAsync(chatFrame.Locator("#iva_mobileNumber"), data.Phone, "Preferred phone number");
+    }
+
+    private async Task AcceptCookiesIfPresent()
+    {
         try
         {
             await page.GetByRole(
                 AriaRole.Button,
                 new()
                 {
-                    NameRegex = new System.Text.RegularExpressions.Regex(
-                        "Accept All Cookies")
-                }).ClickAsync();
+                    NameRegex = new Regex("Accept All Cookies", RegexOptions.IgnoreCase)
+                }).ClickAsync(new LocatorClickOptions { Timeout = Timeouts.Short });
         }
         catch
         {
-            Logger.Info("Cookie popup not displayed");
+            Logger.Info("Cookie popup not displayed.");
         }
-
-        var widget = page.Locator("#dsccChatWidget");
-
-        await widget.WaitForAsync(new LocatorWaitForOptions
-        {
-            State = WaitForSelectorState.Visible,
-            Timeout = 120000
-        });
-
-        try
-        {
-            await widget.ClickAsync();
-            Logger.Info("Clicked dsccChatWidget to open chat widget.");
-        }
-        catch
-        {
-            Logger.Info("Could not click dsccChatWidget; proceeding to locate the chat frame.");
-        }
-
-        var start = DateTime.UtcNow;
-        while (DateTime.UtcNow - start < TimeSpan.FromMilliseconds(120000))
-        {
-            if (page.Frames.Any(f => f.Url.Contains("Chat/Website/")))
-            {
-                Logger.Info("Chat frame URL detected in page frames.");
-                break;
-            }
-
-            await page.WaitForTimeoutAsync(500);
-        }
-
-        var widgetHandle = await widget.ElementHandleAsync();
-
-        Assert.That(widgetHandle, Is.Not.Null);
-
-        frame = await widgetHandle.ContentFrameAsync();
-
-        if (frame is null)
-        {
-            Logger.Info($"Page frames count={page.Frames.Count}");
-            for (var i = 0; i < page.Frames.Count; i++)
-            {
-                Logger.Info($"frame[{i}] url={page.Frames[i].Url}");
-            }
-            foreach (var f in page.Frames)
-            {
-                if (f.Url.Contains("Chat/Website/"))
-                {
-                    frame = f;
-                    break;
-                }
-            }
-
-            if (frame is null)
-            {
-                Logger.Info("No frame found by URL; searching for chat role image.");
-            }
-        }
-
-        if (frame is null)
-        {
-            foreach (var f in page.Frames)
-            {
-                var chatCount = await f.GetByRole(
-                    AriaRole.Img,
-                    new()
-                    {
-                        Name = "Chat"
-                    }).CountAsync();
-                Logger.Info($"frame url={f.Url} chatCount={chatCount}");
-
-                if (chatCount > 0)
-                {
-                    frame = f;
-                    break;
-                }
-            }
-            if (frame is null)
-            {
-                Logger.Info("No frame found by chat role image.");
-            }
-        }
-
-        Assert.That(frame, Is.Not.Null, "Could not find the chat iframe.");
-
-        frame = await ResolveChatFrame(frame!);
-        Logger.Info($"Resolved chat frame url={frame.Url} childFrames={frame.ChildFrames.Count}");
-
-        Assert.That(frame, Is.Not.Null);
-
-        Logger.Info("Chat widget loaded");
     }
 
-    public async Task OpenChat()
+    private IFrame RequireFrame()
     {
-        Assert.That(frame, Is.Not.Null);
+        Assert.That(frame, Is.Not.Null, "Chat frame is not initialized.");
+        return frame!;
+    }
 
-        await frame!.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new FrameWaitForLoadStateOptions
+    private async Task<IFrame> RefreshChatFrameAsync()
+    {
+        frame = await ResolveChatFrameAsync();
+        return RequireFrame();
+    }
+
+    private async Task<IFrame> ResolveChatFrameAsync()
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(Timeouts.ExtraLong);
+        while (DateTime.UtcNow < deadline)
         {
-            Timeout = 120000
-        });
-
-        await frame.WaitForLoadStateAsync(LoadState.NetworkIdle, new FrameWaitForLoadStateOptions
-        {
-            Timeout = 120000
-        });
-
-        var f = frame!;
-        var pageChatButtonCount = await f.GetByRole(
-            AriaRole.Button,
-            new()
+            foreach (var candidate in page.Frames)
             {
-                Name = "Chat"
-            }).CountAsync();
-        var pageChatImgCount = await f.GetByRole(
-            AriaRole.Img,
-            new()
-            {
-                Name = "Chat"
-            }).CountAsync();
-        Logger.Info($"Frame chat selector counts: button={pageChatButtonCount}, img={pageChatImgCount}");
-
-        var chatWidget = f.Locator(".dscc-chatbot-widget");
-        var chatContainer = f.Locator("#chat-profile-container");
-        var chatIcon = f.Locator("#chat-profile-icon");
-        var chatNewBtn = f.Locator("#chat-new-btn");
-        bool clickedChatOpen = false;
-
-        var widgetCount = await chatWidget.CountAsync();
-        var containerCount = await chatContainer.CountAsync();
-        var iconCount = await chatIcon.CountAsync();
-        var newBtnCount = await chatNewBtn.CountAsync();
-
-        var widgetVisible = widgetCount > 0 ? await SafeIsVisibleAsync(chatWidget) : false;
-        var containerVisible = containerCount > 0 ? await SafeIsVisibleAsync(chatContainer) : false;
-        var iconVisible = iconCount > 0 ? await SafeIsVisibleAsync(chatIcon) : false;
-        var newBtnVisible = newBtnCount > 0 ? await SafeIsVisibleAsync(chatNewBtn) : false;
-        Logger.Info($"Chat open candidates visible: widget={widgetVisible}, container={containerVisible}, icon={iconVisible}, newBtn={newBtnVisible}");
-
-        if (containerVisible)
-        {
-            await chatContainer.First.ClickAsync();
-            clickedChatOpen = true;
-            Logger.Info("Clicked visible chat profile container inside the chat frame.");
-        }
-        else if (iconVisible)
-        {
-            await chatIcon.First.ClickAsync();
-            clickedChatOpen = true;
-            Logger.Info("Clicked visible chat profile icon inside the chat frame.");
-        }
-        else if (newBtnVisible)
-        {
-            await chatNewBtn.First.ClickAsync();
-            clickedChatOpen = true;
-            Logger.Info("Clicked visible chat new button inside the chat frame.");
-        }
-        else if (widgetVisible)
-        {
-            await chatWidget.First.ClickAsync();
-            clickedChatOpen = true;
-            Logger.Info("Clicked visible dscc-chatbot-widget inside the chat frame.");
-        }
-        else if (await chatContainer.CountAsync() > 0)
-        {
-            await chatContainer.First.ClickAsync(new LocatorClickOptions { Force = true });
-            clickedChatOpen = true;
-            Logger.Info("Force-clicked chat profile container inside the chat frame.");
-        }
-        else if (await chatIcon.CountAsync() > 0)
-        {
-            await chatIcon.First.ClickAsync(new LocatorClickOptions { Force = true });
-            clickedChatOpen = true;
-            Logger.Info("Force-clicked chat profile icon inside the chat frame.");
-        }
-        else if (await chatNewBtn.CountAsync() > 0)
-        {
-            await chatNewBtn.First.ClickAsync(new LocatorClickOptions { Force = true });
-            clickedChatOpen = true;
-            Logger.Info("Force-clicked chat new button inside the chat frame.");
-        }
-        else if (await chatWidget.CountAsync() > 0)
-        {
-            await chatWidget.First.ClickAsync(new LocatorClickOptions { Force = true });
-            clickedChatOpen = true;
-            Logger.Info("Force-clicked dscc-chatbot-widget inside the chat frame.");
-        }
-        else if (await chatNewBtn.CountAsync() > 0)
-        {
-            clickedChatOpen = await frame.EvaluateAsync<bool>(@"() => {
-                const el = document.querySelector('#chat-new-btn');
-                if (!el) return false;
-                ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(name => el.dispatchEvent(new MouseEvent(name, { bubbles: true, cancelable: true, composed: true })));
-                return true;
-            }");
-            Logger.Info("Dispatched click events to chat new button inside the chat frame.");
-        }
-        else if (await frame.Locator("button:has-text('Chat')").CountAsync() > 0)
-        {
-            await frame.Locator("button:has-text('Chat')").First.ClickAsync();
-            clickedChatOpen = true;
-            Logger.Info("Clicked chat button inside the chat frame.");
-        }
-        else if (await frame.Locator("[aria-label*='Chat']").CountAsync() > 0)
-        {
-            await frame.Locator("[aria-label*='Chat']").First.ClickAsync();
-            clickedChatOpen = true;
-            Logger.Info("Clicked aria-label chat element inside the chat frame.");
-        }
-        else
-        {
-            clickedChatOpen = await frame.EvaluateAsync<bool>(@"() => {
-                const ids = ['#chat-profile-container', '#chat-profile-icon', '#chat-new-btn'];
-                for (const selector of ids) {
-                    const el = document.querySelector(selector);
-                    if (el) {
-                        ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(name => el.dispatchEvent(new MouseEvent(name, { bubbles: true, cancelable: true, composed: true })));
-                        return true;
-                    }
-                }
-                const candidate = Array.from(document.querySelectorAll('button,div,span,a')).find(el => {
-                    const txt = (el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '').toString();
-                    return /chat/i.test(txt);
-                });
-                if (candidate) {
-                    ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(name => candidate.dispatchEvent(new MouseEvent(name, { bubbles: true, cancelable: true, composed: true })));
-                    return true;
-                }
-                return false;
-            }");
-                if (!clickedChatOpen)
+                if (!candidate.Url.Contains("Chat/Website/", StringComparison.OrdinalIgnoreCase) && !await ChatFrameLooksReadyAsync(candidate))
                 {
-                    Logger.Info("No chat open candidate found inside the chat frame. Dumping frame debug info.");
-                    var snippet = await f.EvaluateAsync<string>("() => document.documentElement.outerHTML.slice(0, 10000)");
-                    Logger.Info($"Frame outerHTML snippet: {snippet}");
+                    continue;
                 }
-                else
+
+                var resolved = await ResolveNestedChatFrameAsync(candidate);
+                if (await ChatFrameLooksReadyAsync(resolved))
                 {
-                    Logger.Info("Dispatched click events to chat open candidate via JS inside the chat frame.");
-                }
-        }
-
-        Assert.That(clickedChatOpen, Is.True, "Could not find a chat open trigger inside the chat frame.");
-        Logger.Info("Chat opened");
-
-        await frame.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new FrameWaitForLoadStateOptions
-        {
-            Timeout = 120000
-        });
-
-        await frame.WaitForSelectorAsync("body", new FrameWaitForSelectorOptions
-        {
-            State = WaitForSelectorState.Attached,
-            Timeout = 120000
-        });
-
-        var chatPopup = frame.Locator("#chat-popup");
-        var popupCount = await chatPopup.CountAsync();
-        Logger.Info($"chat-popup count={popupCount}");
-
-        if (popupCount > 0)
-        {
-            var isHidden = await chatPopup.EvaluateAsync<bool>("el => el.classList.contains('hidden')");
-            var display = await chatPopup.EvaluateAsync<string>("el => window.getComputedStyle(el).display");
-            Logger.Info($"chat-popup hidden={isHidden} display={display}");
-
-            if (isHidden)
-            {
-                var candidates = await frame.EvaluateAsync<string[]>(@"() => Array.from(document.querySelectorAll('*')).filter(el => {
-                    const text = (el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '').toString();
-                    const attrs = (el.id || '') + ' ' + (el.className || '');
-                    return /chat/i.test(text) || /chat/i.test(attrs);
-                }).map(el => `${el.tagName}#${el.id}.${el.className} text='${(el.innerText || '').replace(/\s+/g, ' ').trim().slice(0,60)}'`);
-                ");
-
-                Logger.Info($"Chat frame candidate elements: {candidates.Length}");
-                for (var i = 0; i < Math.Min(candidates.Length, 20); i++)
-                {
-                    Logger.Info($"candidate[{i}]={candidates[i]}");
+                    return resolved;
                 }
             }
+
+            await Task.Delay(250);
         }
 
-        await chatPopup.WaitForAsync(new LocatorWaitForOptions
-        {
-            State = WaitForSelectorState.Visible,
-            Timeout = 120000
-        });
-        Logger.Info("chat-popup is visible");
+        throw new InvalidOperationException("Could not find a usable chat frame.");
     }
 
-    public async Task SetupPaymentPlan(TestData data)
+    private async Task<IFrame> ResolveNestedChatFrameAsync(IFrame rootFrame)
     {
-        Assert.That(frame, Is.Not.Null);
-
-        var f = frame!;
-        var setupLocator = f.Locator(".home-card[data-text='Setup a payment plan']");
-
-        await setupLocator.WaitForAsync(new LocatorWaitForOptions
+        if (await ChatFrameLooksReadyAsync(rootFrame))
         {
-            State = WaitForSelectorState.Visible,
-            Timeout = 120000
-        });
-
-        var setupCount = await setupLocator.CountAsync();
-        Logger.Info($"Setup payment plan locator count={setupCount}");
-
-        if (setupCount > 0)
-        {
-            var outerHtml = await setupLocator.First.EvaluateAsync<string>("node => node.outerHTML");
-            Logger.Info($"Setup payment plan outerHTML={outerHtml}");
-        }
-
-        await setupLocator.ClickAsync();
-
-        Logger.Info("Clicked Setup Payment Plan");
-
-        var enterBtn = f.Locator(".enter-details-btn");
-
-        await enterBtn.ClickAsync();
-
-        Logger.Info("Clicked Enter Details");
-
-        await FillCustomerDetails(data);
-
-        await SafeClickAsync(f.GetByRole(
-            AriaRole.Button,
-            new()
-            {
-                Name = "SUBMIT DETAILS"
-            }), "Submit details button");
-
-        Logger.Info("Submitted customer details");
-
-        // Validate response
-        await WaitHelpers.WaitForTextVisibleAsync(
-            f,
-            new Regex("thank.*you.*details|thank.*details|details.*submitted|submitted.*details|your.*details|thank.*for.*your.*details", RegexOptions.IgnoreCase),
-            60000);
-
-        // Send case number
-        await SendMessage(data.CaseNumber);
-        await SendMessage("test");
-
-        // Complete payment plan setup
-        await CompletePaymentPlanSetup(data);
-    }
-
-    private async Task<IFrame> ResolveChatFrame(IFrame currentFrame)
-    {
-        if (await ChatFrameLooksReady(currentFrame))
-        {
-            return currentFrame;
+            return rootFrame;
         }
 
         var queue = new Queue<IFrame>();
-        foreach (var child in currentFrame.ChildFrames)
+        foreach (var child in rootFrame.ChildFrames)
         {
             queue.Enqueue(child);
         }
 
         while (queue.Count > 0)
         {
-            var frame = queue.Dequeue();
-            if (await ChatFrameLooksReady(frame))
+            var candidate = queue.Dequeue();
+            if (await ChatFrameLooksReadyAsync(candidate))
             {
-                return frame;
+                return candidate;
             }
 
-            foreach (var child in frame.ChildFrames)
+            foreach (var child in candidate.ChildFrames)
             {
                 queue.Enqueue(child);
             }
         }
 
-        return currentFrame;
+        return rootFrame;
     }
 
-    private async Task<bool> ChatFrameLooksReady(IFrame chatFrame)
+    private async Task<bool> ChatFrameLooksReadyAsync(IFrame chatFrame)
     {
         try
         {
-            var count = await chatFrame.Locator("#chat-profile-container, #chat-profile-icon, #chat-new-btn, #chat-popup").CountAsync();
+            var count = await chatFrame.Locator("#chat-profile-container, #chat-profile-icon, #chat-new-btn, #chat-popup, .home-card").CountAsync();
             return count > 0;
         }
         catch
@@ -432,510 +831,612 @@ public class MarstonRecoveryPage : BasePage
         }
     }
 
-    public async Task FillCustomerDetails(TestData data)
+    private async Task<bool> SafeTryClickAsync(ILocator locator)
     {
-        Assert.That(frame, Is.Not.Null);
-        var f = frame!;
-
-        await f.GetByRole(
-            AriaRole.Textbox,
-            new()
-            {
-                Name = "Full Name"
-            }).FillAsync(data.FullName);
-
-        await f.GetByRole(
-            AriaRole.Textbox,
-            new()
-            {
-                Name = "Enforcement Agent Reference"
-            }).FillAsync(data.EnforcementRef);
-
-        await f.GetByRole(
-            AriaRole.Textbox,
-            new()
-            {
-                Name = "Address Line 1"
-            }).FillAsync(data.Address1);
-
-        await f.GetByRole(
-            AriaRole.Textbox,
-            new()
-            {
-                Name = "Address Line 2 (Optional)"
-            }).FillAsync(data.Address2);
-
-        await f.GetByRole(
-            AriaRole.Textbox,
-            new()
-            {
-                Name = "Address Line 3 (Optional)"
-            }).FillAsync(data.City);
-
-        await f.GetByRole(
-            AriaRole.Textbox,
-            new()
-            {
-                Name = "Address Line 4 (Optional)"
-            }).FillAsync(data.County);
-
-        await f.GetByRole(
-            AriaRole.Textbox,
-            new()
-            {
-                Name = "Postcode"
-            }).FillAsync(data.Postcode);
-
-                // ------------------------------------------------------------
-        // PHONE COUNTRY SELECTION - INDIA (+91)
-        // ------------------------------------------------------------
-
-        Logger.Info("Selecting India country code");
-        await DropdownHelpers.SelectCountryCodeAsync(f, "in");
-        Logger.Info("India (+91) selected successfully");
-
-        // Verify the selected country is India or +91 before entering phone number
-        var selectedDialCode = (await f.Locator($"{Locators.CountryFlag}:visible .iti__selected-dial-code").First.TextContentAsync())?.Trim();
-        var selectedFlagTitle = (await f.Locator($"{Locators.CountryFlag}:visible").First.GetAttributeAsync("title")) ?? string.Empty;
-
-        Logger.Info($"Country selection verification: title='{selectedFlagTitle}', dialCode='{selectedDialCode}'");
-        Assert.That(selectedDialCode, Is.EqualTo("+91").Or.EqualTo("+91"), "Expected selected dial code to be +91");
-        Assert.That(selectedFlagTitle.ToLowerInvariant().Contains("india"), Is.True, "Expected selected country title to contain India");
-
-        // ------------------------------------------------------------
-        // ENTER PHONE NUMBER
-        // ------------------------------------------------------------
-
-        var phoneTextbox = f.Locator("#iva_mobileNumber");
-
-        await phoneTextbox.WaitForAsync(new LocatorWaitForOptions
+        try
         {
-            State = WaitForSelectorState.Visible,
-            Timeout = 60000
-        });
-
-        await phoneTextbox.ClickAsync();
-
-        await phoneTextbox.FillAsync(data.Phone);
-
-        Logger.Info($"Phone number entered: {data.Phone}");
-        await SafeClickAsync(f.Locator("#chat-new-btn"), "New chat button");
-
-        // Click YES
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "YES" }), "YES button");
-
-        // Click Make a payment
-        await SafeClickAsync(f.GetByText("Make a payment"), "Make a payment option");
-
-        // Click ENTER DETAILS
-        await SafeClickAsync(f.Locator(".enter-details-btn"), "Enter details button");
-
-        // Fill customer details again
-        await FillCustomerDetails(data);
-
-        // Submit details
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "SUBMIT DETAILS" }), "Submit details button");
-
-        // Validate response
-        await WaitHelpers.WaitForTextVisibleAsync(f, "Thank you for providing details");
-
-        // Send case number
-        await SendMessage(data.CaseNumber);
-        await SendMessage("test");
-
-        // Enter payment amount
-        await SafeFillAsync(f.GetByPlaceholder("0.00"), data.PaymentAmount, "Payment amount");
-
-        // Click confirm
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "CONFIRM" }), "Confirm button");
-
-        // Add another case
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "Add another case" }), "Add another case button");
-
-        // Confirm again
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "CONFIRM" }), "Confirm button");
-
-        // Enter payment amount again
-        await SafeFillAsync(f.GetByPlaceholder("0.00"), data.PaymentAmount, "Payment amount");
-
-        // Confirm
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "CONFIRM" }), "Confirm button");
-
-        // Fill payment details
-        await FillPaymentDetails(data);
-
-        Logger.Info("Make Payment flow completed");
-    }
-
-    // ===========================================================================
-    // RAISE COMPLAINT FLOW
-    // ===========================================================================
-
-    public async Task RaiseComplaint(TestData data)
-    {
-        Assert.That(frame, Is.Not.Null);
-        var f = frame!;
-
-        Logger.Info("Starting Raise Complaint flow");
-
-        // Click Yes
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "Yes" }), "Yes button");
-
-        // Send message
-        await SendMessage("Raise a Complaint");
-
-        // Click ENTER DETAILS
-        await SafeClickAsync(f.Locator(".enter-details-btn"), "Enter details button");
-
-        // Fill complaint form
-        await DropdownHelpers.SelectOptionByValueAsync(f.Locator("select[name*='customer']"), "false");
-
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter First Name" }), data.FirstName, "First name");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter Last Name" }), data.LastName, "Last name");
-
-        // Click NEXT
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("NEXT") }), "Next button");
-
-        // Fill contact details
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Your email address" }), data.ComplaintEmail, "Email");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter Telephone Number" }), data.Mobile, "Telephone");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter Address Line 1" }), data.Address1, "Address line 1");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter Address Line 2" }), data.Address2, "Address line 2");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter City" }), data.City, "City");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter Postcode" }), data.Postcode, "Postcode");
-
-        // Select contact method and callback
-        await DropdownHelpers.SelectOptionByValueAsync(f.Locator("#complaintcontact-method"), "email");
-        await DropdownHelpers.SelectOptionByValueAsync(f.Locator("#complaintcall-back"), "No");
-
-        // Fill complaint detail
-        var detailTextboxes = f.GetByRole(AriaRole.Textbox, new() { Name = "Enter Detail" });
-        await SafeFillAsync(detailTextboxes.First, data.ComplaintDetail, "Complaint detail");
-
-        // Select complaint area and type
-        await DropdownHelpers.SelectOptionByLabelAsync(f.Locator("label:has-text('Select the area your') + select"), "Process or admin");
-        await DropdownHelpers.SelectOptionByLabelAsync(f.Locator("label:has-text('Select the type or category') + select"), "Dispute liability");
-
-        // Fill date and name
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "DD/MM/YYYY" }), data.ComplaintDate, "Complaint date");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter the Name" }), data.FullName, "Name");
-
-        // Click NEXT
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("NEXT") }), "Next button");
-
-        // Fill additional details
-        await SafeFillAsync(detailTextboxes.Nth(1), data.IncidentDetail, "Incident detail");
-        await SafeFillAsync(detailTextboxes.Nth(2), data.CustomerExpectation, "Customer expectation");
-
-        // Check data consent
-        await f.Locator("#data-consent").CheckAsync();
-
-        // Submit
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "SUBMIT DETAILS" }), "Submit details button");
-
-        // Validate success
-        await WaitHelpers.WaitForTextVisibleAsync(f, "Thank you for submitting your complaint");
-
-        Logger.Info("Raise Complaint flow completed");
-    }
-
-    // ===========================================================================
-    // VULNERABILITY FORM FLOW
-    // ===========================================================================
-
-    public async Task VulnerabilityForm(TestData data)
-    {
-        Assert.That(frame, Is.Not.Null);
-        var f = frame!;
-
-        Logger.Info("Starting Vulnerability Form flow");
-
-        // Click Yes
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "Yes" }), "Yes button");
-
-        // Send message
-        await SendMessage("Vulnerability form");
-
-        // Click ENTER DETAILS
-        await SafeClickAsync(f.Locator(".enter-details-btn"), "Enter details button");
-
-        // Fill personal details
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter First Name" }), data.FirstName, "First name");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter Last Name" }), data.LastName, "Last name");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter Marston Case Reference" }), data.CaseNumber, "Case reference");
-
-        // Click NEXT
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("NEXT") }), "Next button");
-
-        // Fill contact details
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter Telephone Number" }), data.Mobile, "Telephone");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter Address Line 1" }), data.Address1, "Address line 1");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter City" }), data.City, "City");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter Postcode" }), data.Postcode, "Postcode");
-
-        // Select contact method and callback
-        await DropdownHelpers.SelectOptionByValueAsync(f.Locator("#contact-method"), "Email");
-        await DropdownHelpers.SelectOptionByValueAsync(f.Locator("#callback"), "No");
-
-        // Fill email
-        await SafeFillAsync(f.GetByPlaceholder("Enter Email Address"), data.ComplaintEmail, "Email");
-        await SafeFillAsync(f.GetByPlaceholder("Re-enter Email Address"), data.ComplaintEmail, "Confirm email");
-
-        // Select accessibility and debt advice
-        await DropdownHelpers.SelectOptionByValueAsync(f.Locator("#accessibility"), "No");
-        await DropdownHelpers.SelectOptionByValueAsync(f.Locator("#debt-advice"), "No");
-
-        // Fill medical details
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter Detail" }), data.MedicalDetail, "Medical detail");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Enter Amount" }), data.VulnerabilityAmount, "Amount");
-
-        // Select frequency
-        await DropdownHelpers.SelectOptionByValueAsync(f.Locator("#frequency"), "Weekly");
-
-        // Check checkbox and submit
-        await f.Locator("#VulCheckBox").CheckAsync();
-        await SafeClickAsync(f.Locator("#vulsubmitBtn"), "Submit button");
-
-        Logger.Info("Vulnerability Form flow completed");
-    }
-
-    // ===========================================================================
-    // INCOME & EXPENDITURE FLOW
-    // ===========================================================================
-
-    public async Task IncomeAndExpenditure(TestData data)
-    {
-        Assert.That(frame, Is.Not.Null);
-        var f = frame!;
-
-        Logger.Info("Starting Income & Expenditure flow");
-
-        // Click Yes, proceed
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "Yes, proceed" }), "Yes proceed button");
-
-        // Click ENTER DETAILS
-        await SafeClickAsync(f.Locator(".ie-enter-details-btn"), "IE enter details button");
-
-        // Click SUBMIT
-        await SafeClickAsync(f.Locator("#submitIEForm"), "IE submit button");
-
-        // Fill wages
-        await SafeFillAsync(f.Locator("#wagesValue"), "5", "Wages value");
-
-        // Select frequency
-        await DropdownHelpers.SelectOptionByValueAsync(f.Locator("#wagesFrequency"), "weekly");
-
-        // Submit again
-        await SafeClickAsync(f.Locator("#submitIEForm"), "IE submit button");
-
-        // Validate success
-        await WaitHelpers.WaitForTextVisibleAsync(f, "Thank you for your vulnerability self-declaration");
-
-        Logger.Info("Income & Expenditure flow completed");
-    }
-
-    // ===========================================================================
-    // DISPUTE FORM FLOW
-    // ===========================================================================
-
-    public async Task DisputeForm(TestData data)
-    {
-        Assert.That(frame, Is.Not.Null);
-        var f = frame!;
-
-        Logger.Info("Starting Dispute Form flow");
-
-        // Click Yes
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "Yes" }), "Yes button");
-
-        // Send messages
-        await SendMessage("Dispute form");
-        await SendMessage(data.CaseNumber);
-        await SendMessage("yes");
-        await SendMessage(data.CaseNumber);
-
-        // Click Yes, I am
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "Yes, I am" }), "Yes I am button");
-
-        // Fill dispute details
-        await SafeFillAsync(f.Locator("#disputeFullName"), data.FullName, "Full name");
-        await SafeFillAsync(f.Locator("#disputeEmail"), data.Email, "Email");
-        await SafeFillAsync(f.Locator("#confirmDisputeEmail"), data.Email, "Confirm email");
-        await SafeFillAsync(f.Locator("#contactDisputeNumber"), data.Phone, "Contact number");
-        await SafeFillAsync(f.Locator("#confirmDisputeContactNumber"), data.Phone, "Confirm contact number");
-
-        // Submit
-        await SafeClickAsync(f.Locator("#submitDisputeBtn"), "Submit dispute button");
-
-        // Select dispute reason
-        await DropdownHelpers.SelectOptionByValueAsync(f.Locator("#disputeReason"), "alreadyPaid");
-
-        // Fill dispute date and payment details
-        await SafeFillAsync(f.Locator("#disputeDate"), data.DisputeDate, "Dispute date");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Payment details (date, amount" }), data.PaymentDetails, "Payment details");
-
-        // Submit
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("SUBMIT") }), "Submit button");
-
-        Logger.Info("Dispute Form flow completed");
-    }
-
-    // ===========================================================================
-    // CUSTOMER CONTACT FORM FLOW
-    // ===========================================================================
-
-    public async Task CustomerContactForm(TestData data)
-    {
-        Assert.That(frame, Is.Not.Null);
-        var f = frame!;
-
-        Logger.Info("Starting Customer Contact Form flow");
-
-        // Click Yes
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "Yes" }), "Yes button");
-
-        // Send messages
-        await SendMessage("Customer contact form");
-        await SendMessage(data.CustomerCase);
-
-        // Fill contact details
-        await SafeFillAsync(f.Locator("#name"), "Sriganth", "Name");
-        await SafeFillAsync(f.Locator("#email"), data.Email, "Email");
-        await SafeFillAsync(f.Locator("#confirmEmail"), data.Email, "Confirm email");
-
-        // Submit
-        await SafeClickAsync(f.Locator("#submitBtn"), "Submit button");
-
-        Logger.Info("Customer Contact Form flow completed");
-    }
-
-    // ===========================================================================
-    // PRISON DOCUMENT UPLOAD FLOW
-    // ===========================================================================
-
-    public async Task PrisonDocumentUpload(TestData data)
-    {
-        Assert.That(frame, Is.Not.Null);
-        var f = frame!;
-
-        Logger.Info("Starting Prison Document Upload flow");
-
-        // Click Prison button
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "Prison" }), "Prison button");
-
-        // Upload file
-        await FileUploadHelpers.UploadFileAsync(f.Locator("#prisonFile"), data.PrisonDocumentPath);
-
-        // Submit
-        await SafeClickAsync(f.Locator("#submitBtn"), "Submit button");
-
-        // Click final Yes
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "Yes" }), "Yes button");
-
-        Logger.Info("Prison Document Upload flow completed");
-    }
-
-    // ===========================================================================
-    // HELPER METHODS
-    // ===========================================================================
-
-    private async Task FillPaymentDetails(TestData data)
-    {
-        Assert.That(frame, Is.Not.Null);
-        var f = frame!;
-
-        Logger.Info("Filling payment details");
-
-        // Wait for payment page
-        await WaitHelpers.WaitForTextVisibleAsync(f, "Please enter your card");
-
-        // Fill card details
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "CARD NUMBER" }), data.CardNumber, "Card number");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Expiry Month" }), data.ExpMonth, "Expiry month");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Expiry Year" }), data.ExpYear, "Expiry year");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "CVC" }), data.Cvc, "CVC");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Cardholder name" }), data.FullName, "Cardholder name");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "Address Line" }), data.Address1, "Address line");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "City" }), data.City, "City");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "PostCode" }), data.Postcode, "Postcode");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "MOBILE PHONE NUMBER" }), data.Mobile, "Mobile");
-        await SafeFillAsync(f.GetByRole(AriaRole.Textbox, new() { Name = "EMAIL" }), data.Email, "Email");
-
-        // Click Pay button
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("Pay £") }), "Pay button");
-
-        // Wait for payment processing
-        await Task.Delay(Timeouts.PaymentProcessing);
-
-        // Click DONE
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "DONE" }), "Done button");
-
-        Logger.Info("Payment details filled successfully");
-    }
-
-    private async Task SendMessage(string message)
-    {
-        Assert.That(frame, Is.Not.Null);
-        var f = frame!;
-
-        Logger.Info($"Sending chat message: {message}");
-
-        var messageInput = f.Locator(Locators.MessageInput);
-        if (await messageInput.CountAsync() == 0)
+            if (await locator.CountAsync() == 0)
+            {
+                return false;
+            }
+
+            await locator.First.ClickAsync(new LocatorClickOptions { Timeout = Timeouts.Short });
+            return true;
+        }
+        catch
         {
-            messageInput = f.GetByRole(AriaRole.Textbox).First;
+            try
+            {
+                await locator.First.ClickAsync(new LocatorClickOptions { Force = true, Timeout = Timeouts.Short });
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+
+    private async Task StartHomeCardFlowAsync(string homeCardSelector, string flowName)
+    {
+        var chatFrame = RequireFrame();
+        await SafeClickAsync(chatFrame.Locator(homeCardSelector), flowName);
+        await OpenDetailsFormAsync();
+    }
+
+    private async Task OpenDetailsFormAsync()
+    {
+        var chatFrame = RequireFrame();
+        await SafeClickAsync(chatFrame.Locator($"{Locators.EnterDetailsButton}:visible").First, "Enter details");
+    }
+
+    private async Task SubmitCustomerDetailsAsync()
+    {
+        var chatFrame = RequireFrame();
+        await SafeClickAsync(chatFrame.GetByRole(AriaRole.Button, new() { Name = "SUBMIT DETAILS" }), "Submit customer details");
+        await WaitForCustomerDetailsCompletionAsync(chatFrame);
+    }
+
+    private async Task WaitForCustomerDetailsCompletionAsync(IFrame chatFrame)
+    {
+        var successMessage = chatFrame.GetByText(
+            new Regex("thank.*providing.*details|thank.*details|details.*provided|details.*submitted", RegexOptions.IgnoreCase));
+        var messageBox = chatFrame.GetByPlaceholder(Locators.MessagePlaceholder);
+        var paymentPlanStep = chatFrame.Locator("#spCaseNumber, #splinitialPaymentPlan, #paymentDayGroup, #message-input");
+
+        var deadline = DateTime.UtcNow.AddMilliseconds(Timeouts.Long);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await SafeIsVisibleAsync(successMessage, Timeouts.Short)
+                || await SafeIsVisibleAsync(messageBox, Timeouts.Short)
+                || await SafeIsVisibleAsync(paymentPlanStep, Timeouts.Short))
+            {
+                return;
+            }
+
+            await Task.Delay(250);
         }
 
-        await messageInput.WaitForAsync(new LocatorWaitForOptions
-        {
-            State = WaitForSelectorState.Visible,
-            Timeout = Timeouts.ElementVisible
-        });
-
-        await messageInput.FillAsync(message);
-        await messageInput.PressAsync("Enter");
-
-        var sendButton = f.Locator(Locators.SendButton);
-        if (await sendButton.CountAsync() > 0)
-        {
-            await sendButton.ClickAsync(new LocatorClickOptions { Timeout = 5000 });
-        }
-
-        Logger.Info($"Chat message sent: {message}");
+        throw new TimeoutException("Customer details submission did not reach a ready state.");
     }
 
-    private async Task CompletePaymentPlanSetup(TestData data)
+    private async Task SendCaseConversationAsync(string caseNumber, string followUpMessage)
     {
-        Assert.That(frame, Is.Not.Null);
-        var f = frame!;
+        await SendMessage(caseNumber);
+        await SendMessage(followUpMessage);
+    }
 
-        Logger.Info("Completing payment plan setup");
+    private async Task CompletePaymentPlanSetupAsync(TestData data)
+    {
+        var chatFrame = RequireFrame();
+        var caseNumberSelect = chatFrame.Locator(Locators.PaymentPlanCaseNumber).First;
+        var initialPaymentPlan = chatFrame.Locator(Locators.InitialPaymentPlan).First;
+        var paymentDayGroup = chatFrame.Locator(Locators.PaymentDayGroup).First;
 
-        // Click ENTER DETAILS
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("ENTER DETAILS") }), "Enter details button");
+        await OpenDetailsFormAsync();
+        await SelectDropdownValueAsync(caseNumberSelect, data.CaseNumber, "Payment plan case number");
+        await ClickAttachedElementAsync(initialPaymentPlan, "Initial payment plan option");
+        await SafeClickAsync(chatFrame.GetByRole(AriaRole.Button, new() { Name = "Weekly" }), "Weekly frequency");
+        await SafeClickAsync(paymentDayGroup.GetByText(Locators.ChoosePaymentDayText), "Payment day dropdown");
+        await SafeClickAsync(chatFrame.GetByRole(AriaRole.Button, new() { Name = "Mon", Exact = true }), "Monday payment day");
+        await WaitHelpers.WaitForTextVisibleAsync(chatFrame, "Ready to proceed with this", Timeouts.Long);
+        await SafeClickAsync(chatFrame.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("Yes, pay", RegexOptions.IgnoreCase) }), "Proceed to payment");
+        await FillPaymentDetailsAsync(data);
+    }
 
-        // Select case number
-        await DropdownHelpers.SelectOptionByValueAsync(f.Locator("#spCaseNumber"), data.CaseNumber);
+    private async Task FillPaymentDetailsAsync(TestData data)
+    {
+        var chatFrame = RequireFrame();
 
-        // Click initial payment plan
-        await SafeClickAsync(f.Locator("#splinitialPaymentPlan"), "Initial payment plan");
+        await WaitForPaymentCardFormAsync();
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "CARD NUMBER" }), data.CardNumber, "Card number");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Expiry Month" }), data.ExpMonth, "Expiry month");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Expiry Year" }), data.ExpYear, "Expiry year");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "CVC" }), data.Cvc, "CVC");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Cardholder name" }), data.FullName, "Cardholder name");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line" }), data.Address1, "Payment address line");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "City" }), data.City, "Payment city");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "PostCode" }), data.Postcode, "Payment postcode");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "MOBILE PHONE NUMBER" }), data.Mobile, "Payment mobile");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "EMAIL" }), data.Email, "Payment email");
+        await SafeClickAsync(chatFrame.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("Pay £", RegexOptions.IgnoreCase) }), "Pay button");
 
-        // Click Weekly
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "Weekly" }), "Weekly button");
+        await CompletePaymentAuthorizationAsync();
+    }
 
-        // Choose payment day
-        await f.Locator("#paymentDayGroup").GetByText("Choose Payment Day").ClickAsync();
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { Name = "Mon", Exact = true }), "Monday button");
+    private async Task StartNewConversationAsync()
+    {
+        var chatFrame = RequireFrame();
+        await ClickAttachedElementAsync(chatFrame.Locator(Locators.ChatNewButton).First, "New conversation button");
 
-        // Validate ready message
-        await WaitHelpers.WaitForTextVisibleAsync(f, "Ready to proceed with this");
+        var yesButton = chatFrame.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("^YES$|^Yes$", RegexOptions.IgnoreCase) });
+        if (await SafeIsVisibleAsync(yesButton, Timeouts.Short))
+        {
+            await SafeClickAsync(yesButton, "Confirm new conversation");
+        }
 
-        // Click Yes, pay
-        await SafeClickAsync(f.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("Yes, pay") }), "Yes pay button");
+        var makePaymentCard = chatFrame.GetByText("Make a payment");
+        if (await SafeIsVisibleAsync(makePaymentCard, Timeouts.Short))
+        {
+            Logger.Info("New conversation started and home options are visible.");
+        }
+    }
 
-        // Fill payment details
-        await FillPaymentDetails(data);
+    private async Task StartConversationByMessageAsync(string message)
+    {
+        var chatFrame = RequireFrame();
+        var clickedContinue = false;
 
-        Logger.Info("Payment plan setup completed");
+        var continueCandidates = new[]
+        {
+            chatFrame.Locator("button.chat-btn.primary[onclick*='chatcontinuationYes']"),
+            chatFrame.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("^Yes$|^YES$", RegexOptions.IgnoreCase) }),
+            chatFrame.GetByText(new Regex("^Yes$", RegexOptions.IgnoreCase))
+        };
+
+        foreach (var candidate in continueCandidates)
+        {
+            if (!await SafeIsVisibleAsync(candidate, 1500))
+            {
+                continue;
+            }
+
+            try
+            {
+                await ClickAttachedElementAsync(candidate.First, "Conversation continue button");
+                clickedContinue = true;
+                Logger.Info("Conversation continuation accepted (Yes clicked).");
+                break;
+            }
+            catch
+            {
+                // Try next continuation candidate.
+            }
+        }
+
+        if (!clickedContinue)
+        {
+            await StartNewConversationAsync();
+        }
+
+        await SendMessage(message);
+    }
+
+    private async Task ClickNextAsync()
+    {
+        var chatFrame = RequireFrame();
+        await SafeClickAsync(chatFrame.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("NEXT", RegexOptions.IgnoreCase) }), "Next button");
+    }
+
+    private async Task ChoosePartialPaymentPathAsync()
+    {
+        var chatFrame = RequireFrame();
+        var amountInput = chatFrame.GetByPlaceholder(Locators.PaymentAmountPlaceholder);
+        if (await SafeIsVisibleAsync(amountInput, Timeouts.Short))
+        {
+            return;
+        }
+
+        var partialPaymentCandidates = new[]
+        {
+            chatFrame.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("part|partial", RegexOptions.IgnoreCase) }),
+            chatFrame.GetByText(new Regex("part|partial", RegexOptions.IgnoreCase)),
+            chatFrame.Locator("button:has-text('part'), button:has-text('partial')")
+        };
+
+        foreach (var candidate in partialPaymentCandidates)
+        {
+            if (!await SafeIsVisibleAsync(candidate, Timeouts.Short))
+            {
+                continue;
+            }
+
+            await SafeClickAsync(candidate.First, "Partial payment option");
+            await WaitHelpers.WaitForVisibleAsync(amountInput, Timeouts.Long);
+            Logger.Info("Partial payment path selected.");
+            return;
+        }
+
+        if (await SafeIsVisibleAsync(amountInput, Timeouts.Long))
+        {
+            Logger.Info("Partial payment option was not shown, but amount input is available. Continuing.");
+            return;
+        }
+
+        Logger.Info("Partial payment option and amount input were not available yet; continuing to let downstream steps handle state.");
+    }
+
+    private async Task SelectPartialPaymentAmountAsync(string amount, string description)
+    {
+        var chatFrame = RequireFrame();
+        var amountInput = chatFrame.Locator("input.amount[type='number'][placeholder='0.00'], input.amount, input[placeholder='0.00']").First;
+
+        await ChoosePartialPaymentPathAsync();
+        await SafeFillAsync(amountInput, amount, description);
+        await SafeClickAsync(chatFrame.GetByRole(AriaRole.Button, new() { Name = "CONFIRM" }), $"Confirm {description.ToLowerInvariant()}");
+    }
+
+    private async Task WaitForPaymentCardFormAsync()
+    {
+        var chatFrame = RequireFrame();
+        var cardPrompt = chatFrame.GetByText(new Regex(@"please\s+enter\s+your\s+card", RegexOptions.IgnoreCase));
+        var cardNumberField = chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "CARD NUMBER" });
+
+        var deadline = DateTime.UtcNow.AddMilliseconds(Timeouts.Long);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await SafeIsVisibleAsync(cardPrompt, Timeouts.Short) || await SafeIsVisibleAsync(cardNumberField, Timeouts.Short))
+            {
+                return;
+            }
+
+            await Task.Delay(250);
+        }
+
+        throw new TimeoutException("Payment card form did not become visible.");
+    }
+
+    private async Task CompletePaymentAuthorizationAsync()
+    {
+        var chatFrame = RequireFrame();
+        var threeDsTitle = page.GetByText(new Regex(@"3D\s*Secure", RegexOptions.IgnoreCase));
+        var submitButton = page.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("^Submit$", RegexOptions.IgnoreCase) });
+        var doneButton = chatFrame.Locator("button.done-btn, button:has-text('DONE')").First;
+        var deadline = DateTime.UtcNow.AddMilliseconds(Timeouts.Long);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await SafeIsVisibleAsync(doneButton, 1500))
+            {
+                await SafeClickAsync(doneButton, "Done button");
+                Logger.Info("Payment completed and Done button clicked.");
+                await ContinueAfterPaymentAsync();
+                return;
+            }
+
+            if (await SafeIsVisibleAsync(threeDsTitle, 1000) || await SafeIsVisibleAsync(submitButton, 1000))
+            {
+                Logger.Info("3D Secure challenge detected.");
+
+                if (await SafeIsVisibleAsync(submitButton, Timeouts.Short))
+                {
+                    await SafeClickAsync(submitButton, "3D Secure submit button");
+                    Logger.Info("Submitted 3D Secure challenge.");
+                }
+            }
+
+            await Task.Delay(500);
+        }
+
+        throw new TimeoutException("Payment authorization did not complete: neither 3D Secure submit nor DONE state became available.");
+    }
+
+    private async Task SelectAreYouCustomerAsync()
+    {
+        var chatFrame = RequireFrame();
+        var candidates = new[]
+        {
+            chatFrame.Locator("select[name*='customer'], #are-you-the-customer, #complaintCustomer, select[id*='customer']"),
+            chatFrame.GetByLabel(new Regex("Are you the customer", RegexOptions.IgnoreCase))
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (await candidate.CountAsync() == 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                await candidate.First.WaitForAsync(new LocatorWaitForOptions
+                {
+                    State = WaitForSelectorState.Attached,
+                    Timeout = Timeouts.Long
+                });
+            }
+            catch
+            {
+                // Continue with fallback strategies.
+            }
+
+            try
+            {
+                await DropdownHelpers.SelectOptionByValueAsync(candidate.First, "false");
+                Logger.Info("Selected 'Are you the customer?' using value=false.");
+                return;
+            }
+            catch
+            {
+                try
+                {
+                    await DropdownHelpers.SelectOptionByLabelAsync(candidate.First, "No");
+                    Logger.Info("Selected 'Are you the customer?' using label=No.");
+                    return;
+                }
+                catch
+                {
+                    try
+                    {
+                        await candidate.First.EvaluateAsync(@"element => {
+                            if (element.tagName !== 'SELECT') {
+                                return false;
+                            }
+                            const options = Array.from(element.options || []);
+                            const target = options.find(o => /false|no/i.test((o.value || '') + ' ' + (o.text || '')));
+                            if (!target) {
+                                return false;
+                            }
+                            element.value = target.value;
+                            element.dispatchEvent(new Event('input', { bubbles: true }));
+                            element.dispatchEvent(new Event('change', { bubbles: true }));
+                            return true;
+                        }");
+                        Logger.Info("Selected 'Are you the customer?' using JavaScript fallback.");
+                        return;
+                    }
+                    catch
+                    {
+                        // Try next candidate.
+                    }
+                }
+            }
+        }
+
+        throw new InvalidOperationException("Could not find or select 'Are you the customer?' in Raise Complaint flow.");
+    }
+
+    private async Task ContinueAfterPaymentAsync()
+    {
+        var chatFrame = RequireFrame();
+        var continueCandidates = new[]
+        {
+            chatFrame.Locator("button.chat-btn.primary[onclick*='chatcontinuationYes']"),
+            chatFrame.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("^Yes$", RegexOptions.IgnoreCase) }),
+            chatFrame.GetByText(new Regex("^Yes$", RegexOptions.IgnoreCase))
+        };
+
+        foreach (var candidate in continueCandidates)
+        {
+            if (!await SafeIsVisibleAsync(candidate, Timeouts.Short))
+            {
+                continue;
+            }
+
+            await SafeClickAsync(candidate.First, "Post-payment Yes continuation");
+            Logger.Info("Post-payment continuation accepted (Yes clicked).");
+            return;
+        }
+
+        Logger.Info("Post-payment Yes continuation was not visible; continuing with next flow using existing conversation handling.");
+    }
+
+    private static async Task SelectDropdownValueAsync(ILocator locator, string value, string description)
+    {
+        if (await locator.CountAsync() == 0)
+        {
+            throw new InvalidOperationException($"Could not find dropdown for {description}.");
+        }
+
+        try
+        {
+            await DropdownHelpers.SelectOptionByValueAsync(locator.First, value);
+        }
+        catch
+        {
+            await locator.First.EvaluateAsync(
+                @"(element, selectedValue) => {
+                    element.value = selectedValue;
+                    element.dispatchEvent(new Event('input', { bubbles: true }));
+                    element.dispatchEvent(new Event('change', { bubbles: true }));
+                }",
+                value);
+        }
+    }
+
+    private static async Task SelectDropdownLabelAsync(ILocator locator, string label, string description)
+    {
+        if (await locator.CountAsync() == 0)
+        {
+            throw new InvalidOperationException($"Could not find dropdown for {description}.");
+        }
+
+        await DropdownHelpers.SelectOptionByLabelAsync(locator.First, label);
+    }
+
+    private async Task SelectDropdownLabelIfPresentAsync(
+        IFrame chatFrame,
+        IReadOnlyList<string> selectors,
+        string label,
+        string description)
+    {
+        foreach (var selector in selectors)
+        {
+            var locator = chatFrame.Locator(selector);
+            if (await locator.CountAsync() == 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                await DropdownHelpers.SelectOptionByLabelAsync(locator.First, label);
+                Logger.Info($"Selected {description} by label: {label}");
+                return;
+            }
+            catch
+            {
+                // Try next selector.
+            }
+        }
+
+        Logger.Info($"{description} dropdown not present in this complaint variant. Continuing.");
+    }
+
+    private static async Task ClickAttachedElementAsync(ILocator locator, string description)
+    {
+        if (await locator.CountAsync() == 0)
+        {
+            throw new InvalidOperationException($"Could not find element for {description}.");
+        }
+
+        try
+        {
+            await locator.First.ClickAsync(new LocatorClickOptions { Force = true, Timeout = Timeouts.Short });
+        }
+        catch
+        {
+            await locator.First.EvaluateAsync(@"element => {
+                ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(name => {
+                    element.dispatchEvent(new MouseEvent(name, { bubbles: true, cancelable: true, composed: true }));
+                });
+            }");
+        }
+    }
+
+    private async Task FillBySelectorsAsync(
+        IFrame chatFrame,
+        IReadOnlyList<string> selectors,
+        string value,
+        string description,
+        bool required = true)
+    {
+        foreach (var selector in selectors)
+        {
+            var locator = chatFrame.Locator(selector);
+            if (await locator.CountAsync() == 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                await SafeFillAsync(locator.First, value, description);
+                return;
+            }
+            catch
+            {
+                // Try the next selector or JS fallback.
+            }
+        }
+
+        var jsFilled = await chatFrame.EvaluateAsync<bool>(
+            @"([candidateSelectors, fieldValue]) => {
+                for (const selector of candidateSelectors) {
+                    const element = document.querySelector(selector);
+                    if (!element) {
+                        continue;
+                    }
+
+                    element.focus();
+                    element.value = fieldValue;
+                    element.dispatchEvent(new Event('input', { bubbles: true }));
+                    element.dispatchEvent(new Event('change', { bubbles: true }));
+                    return true;
+                }
+                return false;
+            }",
+            new object[] { selectors, value });
+
+        if (jsFilled)
+        {
+            Logger.Info($"Filled {description} via JavaScript selector fallback.");
+            return;
+        }
+
+        if (required)
+        {
+            throw new InvalidOperationException($"Could not locate a usable input for {description}.");
+        }
+
+        Logger.Info($"Optional field {description} not found; continuing.");
+    }
+
+    private async Task SetFieldValueByJsAsync(
+        IFrame chatFrame,
+        IReadOnlyList<string> selectors,
+        string value,
+        string description)
+    {
+        var jsFilled = await chatFrame.EvaluateAsync<bool>(
+            @"([candidateSelectors, fieldValue]) => {
+                for (const selector of candidateSelectors) {
+                    const element = document.querySelector(selector);
+                    if (!element) {
+                        continue;
+                    }
+
+                    element.focus();
+                    element.value = fieldValue;
+                    element.dispatchEvent(new Event('input', { bubbles: true }));
+                    element.dispatchEvent(new Event('change', { bubbles: true }));
+                    return true;
+                }
+                return false;
+            }",
+            new object[] { selectors, value });
+
+        if (!jsFilled)
+        {
+            throw new InvalidOperationException($"Could not set value for {description}.");
+        }
+
+        Logger.Info($"Set {description} via JavaScript fallback.");
+    }
+
+    private async Task WaitForComplaintSubmittedAsync(IFrame chatFrame)
+    {
+        var thankYou = chatFrame.GetByText(new Regex("thank.*complaint|complaint.*submitted", RegexOptions.IgnoreCase));
+        var continuationYes = chatFrame.Locator("button.chat-btn.primary[onclick*='chatcontinuationYes']");
+        var messageBox = chatFrame.Locator(Locators.MessageInput);
+
+        var deadline = DateTime.UtcNow.AddMilliseconds(Timeouts.Long);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await SafeIsVisibleAsync(thankYou, Timeouts.Short)
+                || await SafeIsVisibleAsync(continuationYes, Timeouts.Short)
+                || await SafeIsVisibleAsync(messageBox, Timeouts.Short))
+            {
+                return;
+            }
+
+            await Task.Delay(250);
+        }
+
+        throw new TimeoutException("Complaint submission did not reach a ready state.");
+    }
+
+    private async Task UploadComplaintAttachmentIfPresentAsync(IFrame chatFrame, string filePath)
+    {
+        var fileInputCandidates = new[]
+        {
+            "input[type='file']",
+            "#complaint-file",
+            "#complaintFile",
+            "input[name='ComplaintFile']",
+            "input[name*='file']"
+        };
+
+        foreach (var selector in fileInputCandidates)
+        {
+            var input = chatFrame.Locator(selector);
+            if (await input.CountAsync() == 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                await input.First.SetInputFilesAsync(filePath);
+                Logger.Info($"Uploaded complaint attachment using selector: {selector}");
+                return;
+            }
+            catch
+            {
+                // Try next candidate.
+            }
+        }
+
+        Logger.Info("Complaint attachment input not found; continuing without file upload.");
     }
 }

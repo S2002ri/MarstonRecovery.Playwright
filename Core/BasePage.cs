@@ -24,7 +24,7 @@ public class BasePage
     /// <summary>
     /// Retry an action with exponential backoff
     /// </summary>
-    protected async Task<T> RetryAsync<T>(Func<Task<T>> action, string actionName, int maxRetries = 3)
+    protected async Task<T> RetryAsync<T>(Func<Task<T>> action, string actionName, int maxRetries = 1)
     {
         int attempt = 0;
         int delay = Timeouts.RetryInterval;

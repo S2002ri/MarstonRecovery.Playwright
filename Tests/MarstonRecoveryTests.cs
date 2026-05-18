@@ -72,7 +72,7 @@ public class MarstonRecoveryTests : BaseTest
 
             await marston.OpenWebsite();
             await marston.OpenChat();
-            await marston.SetupPaymentPlan(data);
+            await marston.SetupPaymentPlan(data, completePaymentPlan: true);
 
             Logger.Info("Setup Payment Plan Test completed successfully");
         }
@@ -153,6 +153,171 @@ public class MarstonRecoveryTests : BaseTest
         {
             Logger.Error($"Test failed with exception: {ex.Message}");
             await marston.TakeScreenshotAsync("vulnerability_form_failure");
+            throw;
+        }
+    }
+
+    [Test]
+    public async Task VulnerabilityFormToDisputeFlow()
+    {
+        var data = new TestData();
+        var marston = new MarstonRecoveryPage(page!);
+
+        try
+        {
+            Logger.Info("Starting Vulnerability Form to Dispute Flow Test");
+
+            // Phase 1: Vulnerability and Income & Expenditure
+            await marston.OpenWebsite();
+            await marston.OpenChat();
+            await marston.VulnerabilityForm(data);
+            await marston.IncomeAndExpenditure(data);
+            
+            Logger.Info("Income & Expenditure completed. Closing browser for fresh start...");
+            
+            // Close current page and context
+            await page!.CloseAsync();
+            await context!.CloseAsync();
+            
+            // Create new context and page for Dispute form
+            Logger.Info("Creating new browser context and page for Dispute form");
+            context = await browser!.NewContextAsync();
+            page = await context.NewPageAsync();
+            
+            // Phase 2: Dispute form in fresh session
+            marston = new MarstonRecoveryPage(page);
+            await marston.OpenWebsite();
+            await marston.OpenChat();
+            await marston.DisputeForm(data);
+
+            Logger.Info("Dispute form completed. Closing browser for Post-Dispute flow...");
+
+            // Close current page and context
+            await page.CloseAsync();
+            await context.CloseAsync();
+
+            // Create new context and page for Post-Dispute Customer Contact Form
+            Logger.Info("Creating new browser context and page for Post-Dispute Customer Contact Form");
+            context = await browser!.NewContextAsync();
+            page = await context.NewPageAsync();
+
+            // Phase 3: Post-Dispute Customer Contact Form in fresh session
+            marston = new MarstonRecoveryPage(page);
+            await marston.OpenWebsite();
+            await marston.OpenChat();
+            await marston.PostDisputeCustomerContactForm(data);
+
+            Logger.Info("Vulnerability Form to Dispute to Post-Dispute Flow Test completed successfully");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Test failed with exception: {ex.Message}");
+            await marston.TakeScreenshotAsync("vulnerability_to_dispute_failure");
+            throw;
+        }
+    }
+
+    [Test]
+    public async Task VulnerabilityFormToIncomeAndExpenditureOnly()
+    {
+        var data = new TestData();
+        var marston = new MarstonRecoveryPage(page!);
+
+        try
+        {
+            Logger.Info("Starting Vulnerability Form to Income & Expenditure Test");
+
+            await marston.OpenWebsite();
+            await marston.OpenChat();
+            await marston.VulnerabilityForm(data);
+            await marston.IncomeAndExpenditure(data);
+
+            Logger.Info("Vulnerability Form to Income & Expenditure Test completed successfully");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Test failed with exception: {ex.Message}");
+            await marston.TakeScreenshotAsync("vulnerability_to_ie_failure");
+            throw;
+        }
+    }
+
+    [Test]
+    public async Task SetupPaymentToIncomeAndExpenditureFlow()
+    {
+        var data = new TestData();
+        var marston = new MarstonRecoveryPage(page!);
+
+        try
+        {
+            Logger.Info("Starting Setup -> Payment -> Complaint -> Vulnerability -> Income & Expenditure flow");
+
+            await marston.OpenWebsite();
+            await marston.OpenChat();
+            await marston.SetupPaymentPlan(data);
+            await marston.MakePayment(data);
+            await marston.RaiseComplaint(data);
+            await marston.VulnerabilityForm(data);
+            await marston.IncomeAndExpenditure(data);
+
+            Logger.Info("Setup -> Payment -> Complaint -> Vulnerability -> Income & Expenditure flow completed successfully");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Test failed with exception: {ex.Message}");
+            await marston.TakeScreenshotAsync("setup_payment_to_ie_failure");
+            throw;
+        }
+    }
+
+    [Test]
+    public async Task CustomerContactFormOnly()
+    {
+        var data = new TestData();
+        var marston = new MarstonRecoveryPage(page!);
+
+        try
+        {
+            Logger.Info("Starting Customer Contact Form Test Only");
+
+            await marston.OpenWebsite();
+            await marston.OpenChat();
+            await marston.PostDisputeCustomerContactForm(data);
+
+            Logger.Info("Customer Contact Form Test completed successfully");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Test failed with exception: {ex.Message}");
+            await marston.TakeScreenshotAsync("customer_contact_form_failure");
+            throw;
+        }
+    }
+
+    [Test]
+    public async Task MaxContactFlowAfterCustomerContactOnly()
+    {
+        var data = new TestData();
+        var marston = new MarstonRecoveryPage(page!);
+
+        try
+        {
+            Logger.Info("Starting standalone Max Contact flow test (Customer Contact flow is not rerun)");
+
+            await marston.OpenWebsite();
+            await marston.OpenChat();
+            await marston.MaxContactFlowAfterCustomerContact(data);
+
+            // Explicitly close browser context at end of this flow.
+            await page!.CloseAsync();
+            await context!.CloseAsync();
+
+            Logger.Info("Standalone Max Contact flow test completed successfully");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Test failed with exception: {ex.Message}");
+            await marston.TakeScreenshotAsync("max_contact_after_customer_contact_failure");
             throw;
         }
     }

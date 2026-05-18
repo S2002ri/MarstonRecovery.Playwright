@@ -22,6 +22,7 @@ public class BaseTest
         browser = await playwright.Chromium.LaunchAsync(
             new BrowserTypeLaunchOptions
             {
+                Channel = "chrome",
                 Headless = false,
                 SlowMo = 500
             });
