@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MarstonRecovery.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ce763c5da1d30768a11e84cbc91459d3f40f1be5")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+639aeb42c2492247d09de589947a8b31fb7adefd")]
 [assembly: System.Reflection.AssemblyProductAttribute("MarstonRecovery.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MarstonRecovery.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

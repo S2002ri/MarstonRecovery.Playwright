@@ -1,0 +1,93 @@
+{
+  "Flow": "TC021_SetupPaymentPlan_Weekly_ValidFlow",
+  "ExecutedAt": "2026-05-19T09:13:24.081121Z",
+  "TotalSteps": 12,
+  "Passed": 11,
+  "Failed": 1,
+  "Results": [
+    {
+      "StepName": "Open Marston Recovery URL",
+      "ExpectedResult": "Marston Recovery page opens and chat iframe becomes available.",
+      "ActualResult": "Open Marston Recovery URL completed successfully.",
+      "Status": "PASS",
+      "TimestampUtc": "2026-05-19T09:12:29.6321469Z"
+    },
+    {
+      "StepName": "Open chatbot",
+      "ExpectedResult": "Chat popup is visible after clicking chatbot icon.",
+      "ActualResult": "Open chatbot completed successfully.",
+      "Status": "PASS",
+      "TimestampUtc": "2026-05-19T09:12:31.8548619Z"
+    },
+    {
+      "StepName": "Click Setup a payment plan card",
+      "ExpectedResult": "Setup a payment plan option is selected.",
+      "ActualResult": "Click Setup a payment plan card completed successfully.",
+      "Status": "PASS",
+      "TimestampUtc": "2026-05-19T09:12:32.4898964Z"
+    },
+    {
+      "StepName": "Open customer details form",
+      "ExpectedResult": "ENTER DETAILS form is opened.",
+      "ActualResult": "Open customer details form completed successfully.",
+      "Status": "PASS",
+      "TimestampUtc": "2026-05-19T09:12:35.0368873Z"
+    },
+    {
+      "StepName": "Fill customer details",
+      "ExpectedResult": "Customer details fields are populated with setup-payment test data.",
+      "ActualResult": "Fill customer details completed successfully.",
+      "Status": "PASS",
+      "TimestampUtc": "2026-05-19T09:12:40.0004844Z"
+    },
+    {
+      "StepName": "Submit customer details",
+      "ExpectedResult": "SUBMIT DETAILS is accepted and chat is ready for next message.",
+      "ActualResult": "Submit customer details completed successfully.",
+      "Status": "PASS",
+      "TimestampUtc": "2026-05-19T09:12:40.6147062Z"
+    },
+    {
+      "StepName": "Send case number message",
+      "ExpectedResult": "Message input accepts M733678 and sends it.",
+      "ActualResult": "Send case number message completed successfully.",
+      "Status": "PASS",
+      "TimestampUtc": "2026-05-19T09:12:41.785508Z"
+    },
+    {
+      "StepName": "Send follow-up message",
+      "ExpectedResult": "Message input accepts test and sends it.",
+      "ActualResult": "Send follow-up message completed successfully.",
+      "Status": "PASS",
+      "TimestampUtc": "2026-05-19T09:12:42.9567085Z"
+    },
+    {
+      "StepName": "Open payment-plan details form again",
+      "ExpectedResult": "ENTER DETAILS opens payment-plan setup fields.",
+      "ActualResult": "Open payment-plan details form again completed successfully.",
+      "Status": "PASS",
+      "TimestampUtc": "2026-05-19T09:12:44.4446002Z"
+    },
+    {
+      "StepName": "Configure payment plan",
+      "ExpectedResult": "Case number, amount, frequency, and day are selected and setup is submitted.",
+      "ActualResult": "Configure payment plan completed successfully.",
+      "Status": "PASS",
+      "TimestampUtc": "2026-05-19T09:12:49.690916Z"
+    },
+    {
+      "StepName": "Fill card payment details",
+      "ExpectedResult": "Card form is completed with configured payment details.",
+      "ActualResult": "Fill card payment details completed successfully.",
+      "Status": "PASS",
+      "TimestampUtc": "2026-05-19T09:12:57.1839586Z"
+    },
+    {
+      "StepName": "Complete payment and verify order confirmation",
+      "ExpectedResult": "Payment is submitted and Order Confirmation is displayed.",
+      "ActualResult": "Target page, context or browser has been closed",
+      "Status": "FAIL",
+      "TimestampUtc": "2026-05-19T09:13:23.9898292Z"
+    }
+  ]
+}

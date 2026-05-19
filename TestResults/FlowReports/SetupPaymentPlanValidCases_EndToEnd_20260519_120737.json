@@ -1,0 +1,16 @@
+{
+  "Flow": "SetupPaymentPlanValidCases_EndToEnd",
+  "ExecutedAt": "2026-05-19T06:37:37.3887299Z",
+  "TotalSteps": 1,
+  "Passed": 0,
+  "Failed": 1,
+  "Results": [
+    {
+      "StepName": "Open Marston Recovery URL",
+      "ExpectedResult": "Marston Recovery page opens and chat iframe becomes available.",
+      "ActualResult": "Collection was modified; enumeration operation may not execute.",
+      "Status": "FAIL",
+      "TimestampUtc": "2026-05-19T06:37:37.3833172Z"
+    }
+  ]
+}

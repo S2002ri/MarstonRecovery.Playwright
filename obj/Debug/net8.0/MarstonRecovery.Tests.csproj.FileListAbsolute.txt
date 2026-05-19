@@ -483,3 +483,11 @@ C:\Users\Sriganth.M\MarstonRecovery.Playwright\MarstonRecovery.Tests\obj\Debug\n
 C:\Users\Sriganth.M\MarstonRecovery.Playwright\MarstonRecovery.Tests\obj\Debug\net8.0\MarstonRecovery.Tests.pdb
 C:\Users\Sriganth.M\MarstonRecovery.Playwright\MarstonRecovery.Tests\obj\Debug\net8.0\MarstonRecovery.Tests.genruntimeconfig.cache
 C:\Users\Sriganth.M\MarstonRecovery.Playwright\MarstonRecovery.Tests\obj\Debug\net8.0\ref\MarstonRecovery.Tests.dll
+C:\Users\Sriganth.M\MarstonRecovery.Playwright\MarstonRecovery.Tests\bin\Debug\net8.0\ClosedXML.dll
+C:\Users\Sriganth.M\MarstonRecovery.Playwright\MarstonRecovery.Tests\bin\Debug\net8.0\ClosedXML.Parser.dll
+C:\Users\Sriganth.M\MarstonRecovery.Playwright\MarstonRecovery.Tests\bin\Debug\net8.0\DocumentFormat.OpenXml.dll
+C:\Users\Sriganth.M\MarstonRecovery.Playwright\MarstonRecovery.Tests\bin\Debug\net8.0\DocumentFormat.OpenXml.Framework.dll
+C:\Users\Sriganth.M\MarstonRecovery.Playwright\MarstonRecovery.Tests\bin\Debug\net8.0\ExcelNumberFormat.dll
+C:\Users\Sriganth.M\MarstonRecovery.Playwright\MarstonRecovery.Tests\bin\Debug\net8.0\RBush.dll
+C:\Users\Sriganth.M\MarstonRecovery.Playwright\MarstonRecovery.Tests\bin\Debug\net8.0\SixLabors.Fonts.dll
+C:\Users\Sriganth.M\MarstonRecovery.Playwright\MarstonRecovery.Tests\bin\Debug\net8.0\System.IO.Packaging.dll

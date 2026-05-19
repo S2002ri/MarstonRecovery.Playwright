@@ -13,13 +13,19 @@ MarstonRecovery.Tests/
 │   ├── BasePage.cs          # Base page with retry logic and error handling
 │   └── BaseTest.cs          # Base test setup/teardown
 ├── Models/
-│   └── TestData.cs          # Test data configuration
+│   ├── TestData.cs          # Shared test data configuration
+│   ├── SetupPaymentPlanFlowData.cs # Dedicated data for Setup Payment Plan valid flow
+│   └── FlowStepResult.cs    # Per-step result contract (Expected/Actual/PASS/FAIL)
 ├── Pages/
-│   └── MarstonRecoveryPage.cs  # Page Object Model with all flow methods
+│   ├── MarstonRecoveryPage.cs  # Shared workflows
+│   └── SetupPaymentPlanValidCasesPage.cs # Dedicated POM for Setup Payment Plan valid flow
 ├── Tests/
-│   └── MarstonRecoveryTests.cs # Test cases
+│   ├── PaymentPlanTests.cs  # Flow test cases for payment-plan scenarios
+│   └── ...                 # Other flow test cases
 ├── Utils/
 │   ├── DropdownHelpers.cs   # Dropdown handling utilities
+│   ├── FlowStepRunner.cs    # Reusable step executor with PASS/FAIL logging
+│   ├── FlowReportWriter.cs  # JSON/CSV report generation from execution logs
 │   ├── FileUploadHelpers.cs # File upload utilities
 │   ├── Logger.cs            # Logging utility
 │   └── WaitHelpers.cs       # Dynamic wait utilities
@@ -35,11 +41,32 @@ MarstonRecovery.Tests/
 - **Retry Logic**: Exponential backoff retry mechanism for flaky operations
 - **Error Handling**: Comprehensive exception handling with screenshot capture
 - **Logging**: Detailed logging for debugging and traceability
+- **Step-Level Reporting**: Auto-generated expected vs actual per step with PASS/FAIL
 - **Reusable Locators**: Centralized locator management for easy maintenance
 - **Constants**: Centralized timeout and configuration values
 - **File Upload Handling**: Robust file upload with hidden element support
 - **Dropdown Handling**: Multiple fallback strategies for dropdown interactions
 - **Frame Handling**: Sophisticated iframe detection and resolution
+- **Screenshot on Failure**: Failed steps auto-capture screenshots
+- **Flow Reports**: JSON/CSV reports written to `TestResults/FlowReports`
+
+## Setup Payment Plan - Valid Cases Framework
+
+The flow is implemented with a dedicated POM and reusable utilities:
+
+- Page Object Model: `Pages/SetupPaymentPlanValidCasesPage.cs`
+- Separate test data: `Models/SetupPaymentPlanFlowData.cs`
+- Reusable step runner: `Utils/FlowStepRunner.cs`
+- Report generation: `Utils/FlowReportWriter.cs`
+- End-to-end tests: `Tests/PaymentPlanTests.cs`
+
+### What is generated automatically during execution
+
+- Step log entries for each action
+- Expected Result and Actual Result per step
+- Step status (`PASS` or `FAIL`)
+- Failure screenshot when a step fails
+- Flow report files (`.json` and `.csv`) in `TestResults/FlowReports`
 
 ### Test Flows Covered
 
@@ -96,16 +123,72 @@ public string PrisonDocumentPath => @"C:\path\to\your\test.pdf";
 
 ## Running Tests
 
+### Restore packages
+
+```bash
+dotnet restore
+```
+
+### Build project
+
+```bash
+dotnet build --no-restore
+```
+
 ### Run All Tests
 
 ```bash
 dotnet test
 ```
 
+### Run all tests with build skipped
+
+```bash
+dotnet test --no-build
+```
+
 ### Run Specific Test
 
 ```bash
 dotnet test --filter "FullyQualifiedName~EndToEndFlow"
+```
+
+### Run single flow (Setup Payment Plan - Valid Cases E2E)
+
+```bash
+dotnet test --no-restore --filter "Name=SetupPaymentPlanValidCases_EndToEnd"
+```
+
+### Run only report-generation test case for this flow
+
+```bash
+dotnet test --no-restore --filter "Name=SetupPaymentPlanValidCases_ReportGenerationOnly"
+```
+
+### View latest console logs from test execution
+
+```bash
+dotnet test --no-restore --filter "Name=SetupPaymentPlanValidCases_EndToEnd" -v normal
+```
+
+### View generated flow reports
+
+```bash
+Get-ChildItem .\TestResults\FlowReports | Sort-Object LastWriteTime -Descending | Select-Object -First 10
+```
+
+### Open the latest JSON flow report
+
+```bash
+$report = Get-ChildItem .\TestResults\FlowReports\*.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+Get-Content $report.FullName
+```
+
+### Open the latest CSV flow report
+
+```bash
+$report = Get-ChildItem .\TestResults\FlowReports\*.csv | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+Get-Content $report.FullName
 ```
 
 ### Run Specific Test Class

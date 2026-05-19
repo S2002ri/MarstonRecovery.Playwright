@@ -1,0 +1,10 @@
+StepName,ExpectedResult,ActualResult,Status,TimestampUtc
+"Open Marston Recovery URL","Marston Recovery page opens and chat iframe becomes available.","Open Marston Recovery URL completed successfully.","PASS","2026-05-19T06:43:41.1818201Z"
+"Open chatbot","Chat popup is visible after clicking chatbot icon.","Open chatbot completed successfully.","PASS","2026-05-19T06:43:43.5964155Z"
+"Click Setup a payment plan card","Setup a payment plan option is selected.","Click Setup a payment plan card completed successfully.","PASS","2026-05-19T06:43:44.2696167Z"
+"Open customer details form","ENTER DETAILS form is opened.","Open customer details form completed successfully.","PASS","2026-05-19T06:43:46.7728242Z"
+"Fill customer details","Customer details fields are populated with setup-payment test data.","Fill customer details completed successfully.","PASS","2026-05-19T06:43:51.9179310Z"
+"Submit customer details","SUBMIT DETAILS is accepted and chat is ready for next message.","Submit customer details completed successfully.","PASS","2026-05-19T06:43:52.5530717Z"
+"Send case number message","Message input accepts M733678 and sends it.","Send case number message completed successfully.","PASS","2026-05-19T06:43:53.7036199Z"
+"Send follow-up message","Message input accepts test and sends it.","Send follow-up message completed successfully.","PASS","2026-05-19T06:43:54.8521656Z"
+"Open payment-plan details form again","ENTER DETAILS opens payment-plan setup fields.","Target page, context or browser has been closed Call log: - waiting for Locator(""button.enter-details-btn:visible, .enter-details-btn:visible"").First to be visible","FAIL","2026-05-19T06:44:20.1883327Z"

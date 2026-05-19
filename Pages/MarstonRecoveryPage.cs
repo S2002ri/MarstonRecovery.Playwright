@@ -115,6 +115,40 @@ public class MarstonRecoveryPage : BasePage
         Logger.Info("Setup Payment Plan conversation completed. Ready to continue with the next flow.");
     }
 
+    public async Task SetupPaymentPlanValidCases(TestData data)
+    {
+        await OpenWebsite();
+        await OpenChat();
+
+        var chatFrame = RequireFrame();
+        await StartHomeCardFlowAsync(Locators.SetupPaymentPlanCard, "Setup a payment plan");
+        chatFrame = await RefreshChatFrameAsync();
+
+        await FillSetupPaymentCustomerDetailsAsync(chatFrame, data);
+        await SubmitCustomerDetailsAsync();
+
+        await SendMessage(data.SetupPaymentPlanCaseNumber);
+        await SendMessage(data.SetupPaymentPlanFollowUpMessage);
+
+        chatFrame = await RefreshChatFrameAsync();
+        await OpenDetailsFormAsync();
+        chatFrame = await RefreshChatFrameAsync();
+
+        await SelectDropdownValueAsync(chatFrame.Locator("#spCaseNumber").First, data.SetupPaymentPlanCaseNumber, "Setup payment plan case number");
+        await SafeFillAsync(chatFrame.Locator("#splinitialPaymentPlan").First, data.SetupPaymentPlanInitialAmount, "Setup payment plan initial amount");
+        await SafeClickAsync(chatFrame.Locator("#paymentFrequencyGroupButtons button:has-text('Weekly')").First, "Weekly payment frequency");
+        await SafeClickAsync(chatFrame.Locator("#paymentDayGroupButtons button[data-value='1'], #paymentDayGroupButtons button:has-text('Mon')").First, "Monday payment day");
+        await SafeClickAsync(chatFrame.Locator("#btnsetupPayment, button.payment-enter-details-btn:has-text('Setup My Payment Plan')").First, "Setup My Payment Plan button");
+        await SafeClickAsync(chatFrame.Locator("#payplanamount, button.action-btn:has-text('Yes, pay £20.00')").First, "Payment plan confirmation button");
+
+        await FillSetupPlanPaymentDetailsAsync(data);
+        await WaitForOrderConfirmationAsync();
+        await Task.Delay(15000);
+
+        await CloseBrowserSessionAsync();
+        Logger.Info("Setup Payment Plan - Valid Cases flow completed and browser closed.");
+    }
+
     public async Task MakePayment(TestData data)
     {
         var chatFrame = RequireFrame();
@@ -944,6 +978,130 @@ public class MarstonRecoveryPage : BasePage
         await CompletePaymentAuthorizationAsync();
     }
 
+    private async Task FillSetupPaymentCustomerDetailsAsync(IFrame chatFrame, TestData data)
+    {
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Full Name" }), data.SetupPaymentCustomerFullName, "Setup payment full name");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Enforcement Agent Reference" }), data.SetupPaymentCustomerCaseNumber, "Setup payment case number");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 1" }), data.SetupPaymentCustomerAddress1, "Setup payment address line 1");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 2 (Optional)" }), data.SetupPaymentCustomerAddress2, "Setup payment address line 2");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line 3 (Optional)" }), data.SetupPaymentCustomerCity, "Setup payment city");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Postcode" }), data.SetupPaymentCustomerPostcode, "Setup payment postcode");
+        await DropdownHelpers.SelectCountryCodeAsync(chatFrame, data.SetupPaymentCountryCode);
+        await SafeFillAsync(chatFrame.Locator("#iva_mobileNumber"), data.SetupPaymentCustomerMobile, "Setup payment mobile");
+    }
+
+    private async Task FillSetupPlanPaymentDetailsAsync(TestData data)
+    {
+        var chatFrame = RequireFrame();
+
+        await WaitForPaymentCardFormAsync();
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "CARD NUMBER" }), data.CardNumber, "Card number");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Expiry Month" }), data.ExpMonth, "Expiry month");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Expiry Year" }), data.ExpYear, "Expiry year");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "CVC" }), data.Cvc, "CVC");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Cardholder name" }), data.SetupPaymentCardholderName, "Cardholder name");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "Address Line" }), data.SetupPaymentCardAddressLine, "Payment address line");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "City" }), data.SetupPaymentCardCity, "Payment city");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "PostCode" }), data.SetupPaymentCardPostCode, "Payment postcode");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "MOBILE PHONE NUMBER" }), data.SetupPaymentCardMobile, "Payment mobile");
+        await SafeFillAsync(chatFrame.GetByRole(AriaRole.Textbox, new() { Name = "EMAIL" }), data.SetupPaymentCardEmail, "Payment email");
+
+        await SelectSetupPaymentCountryIfPresentAsync(chatFrame, data.SetupPaymentCardCountry, data.SetupPaymentPhoneCountryCode);
+
+        await SafeClickAsync(chatFrame.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("Pay £", RegexOptions.IgnoreCase) }), "Pay button");
+        await CompletePaymentAuthorizationAsync();
+    }
+
+    private static async Task SelectSetupPaymentCountryIfPresentAsync(IFrame chatFrame, string country, string phoneCountryCode)
+    {
+        var countrySelectCandidates = new[]
+        {
+            "select#country",
+            "select[name='country']",
+            "select[name*='Country']",
+            "select[aria-label*='Country']"
+        };
+
+        foreach (var selector in countrySelectCandidates)
+        {
+            var locator = chatFrame.Locator(selector);
+            if (await locator.CountAsync() == 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                await DropdownHelpers.SelectOptionByLabelAsync(locator.First, country);
+                break;
+            }
+            catch
+            {
+                // Try next selector candidate.
+            }
+        }
+
+        var phoneCodeSelectCandidates = new[]
+        {
+            "select#phoneCountryCode",
+            "select[name='phoneCountryCode']",
+            "select[name*='Phone'][name*='Country']",
+            "select[aria-label*='Phone Country Code']"
+        };
+
+        foreach (var selector in phoneCodeSelectCandidates)
+        {
+            var locator = chatFrame.Locator(selector);
+            if (await locator.CountAsync() == 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                await DropdownHelpers.SelectOptionByLabelAsync(locator.First, phoneCountryCode);
+                break;
+            }
+            catch
+            {
+                // Try next selector candidate.
+            }
+        }
+    }
+
+    private async Task WaitForOrderConfirmationAsync()
+    {
+        var chatFrame = RequireFrame();
+        var orderConfirmationInFrame = chatFrame.GetByText(new Regex("Order\\s*Confirmation", RegexOptions.IgnoreCase));
+        var orderConfirmationInPage = page.GetByText(new Regex("Order\\s*Confirmation", RegexOptions.IgnoreCase));
+        var deadline = DateTime.UtcNow.AddMilliseconds(Timeouts.ExtraLong);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await SafeIsVisibleAsync(orderConfirmationInFrame, 1000) || await SafeIsVisibleAsync(orderConfirmationInPage, 1000))
+            {
+                Logger.Info("Order Confirmation page is displayed.");
+                return;
+            }
+
+            await Task.Delay(500);
+        }
+
+        throw new TimeoutException("Order Confirmation page was not displayed in the expected time.");
+    }
+
+    private async Task CloseBrowserSessionAsync()
+    {
+        try
+        {
+            await page.Context.CloseAsync();
+        }
+        catch
+        {
+            Logger.Info("Context was already closed or unavailable during Setup Payment Plan cleanup.");
+        }
+    }
+
     private async Task StartNewConversationAsync()
     {
         var chatFrame = RequireFrame();
@@ -1232,16 +1390,6 @@ public class MarstonRecoveryPage : BasePage
                 }",
                 value);
         }
-    }
-
-    private static async Task SelectDropdownLabelAsync(ILocator locator, string label, string description)
-    {
-        if (await locator.CountAsync() == 0)
-        {
-            throw new InvalidOperationException($"Could not find dropdown for {description}.");
-        }
-
-        await DropdownHelpers.SelectOptionByLabelAsync(locator.First, label);
     }
 
     private async Task SelectDropdownLabelIfPresentAsync(

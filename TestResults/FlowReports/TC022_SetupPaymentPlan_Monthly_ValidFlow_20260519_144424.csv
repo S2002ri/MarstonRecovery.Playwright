@@ -1,0 +1,11 @@
+StepName,ExpectedResult,ActualResult,Status,TimestampUtc
+"Open Marston Recovery URL","Marston Recovery page opens and chat iframe becomes available.","Open Marston Recovery URL completed successfully.","PASS","2026-05-19T09:13:35.3769539Z"
+"Open chatbot","Chat popup is visible after clicking chatbot icon.","Open chatbot completed successfully.","PASS","2026-05-19T09:13:37.4818743Z"
+"Click Setup a payment plan card","Setup a payment plan option is selected.","Click Setup a payment plan card completed successfully.","PASS","2026-05-19T09:13:38.1339130Z"
+"Open customer details form","ENTER DETAILS form is opened.","Open customer details form completed successfully.","PASS","2026-05-19T09:13:40.1307067Z"
+"Fill customer details","Customer details fields are populated with setup-payment test data.","Fill customer details completed successfully.","PASS","2026-05-19T09:13:45.2461258Z"
+"Submit customer details","SUBMIT DETAILS is accepted and chat is ready for next message.","Submit customer details completed successfully.","PASS","2026-05-19T09:13:45.9119466Z"
+"Send case number message","Message input accepts M733678 and sends it.","Send case number message completed successfully.","PASS","2026-05-19T09:13:47.1004099Z"
+"Send follow-up message","Message input accepts test and sends it.","Send follow-up message completed successfully.","PASS","2026-05-19T09:13:48.2816469Z"
+"Open payment-plan details form again","ENTER DETAILS opens payment-plan setup fields.","Open payment-plan details form again completed successfully.","PASS","2026-05-19T09:13:49.7629938Z"
+"Configure payment plan","Case number, amount, frequency, and day are selected and setup is submitted.","Timeout 30000ms exceeded. Call log: - waiting for Locator(""#paymentDayGroupButtons button[data-value='1'], #paymentDayGroupButtons button:has-text('1')"").First to be visible 63 × locator resolved to hidden <button type=""button"" data-value=""1"" class=""chip-btn"">Mon</button>","FAIL","2026-05-19T09:14:24.4318559Z"

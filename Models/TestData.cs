@@ -81,7 +81,7 @@ public class TestData
 
     // Dispute Specific Data
     public string DisputeFullName => "test";
-    public string DisputeCaseNumber => "M989031";
+    public string DisputeCaseNumber => "M989055";
     public string DisputeEmail => "Sriganthsri65126@gmail.com";
     public string DisputeConfirmEmail => "Sriganthsri65126@gmail.com";
     
@@ -95,15 +95,39 @@ public class TestData
     public string DisputeCustomerPostcode => "CR0 2BT";
     public string DisputeCountryCode => "in";  // India country code
 
+    // Setup Payment Plan Customer Details (used in SetupPaymentPlanValidCases flow)
+    public string SetupPaymentCustomerFullName => "chika Esmaje";
+    public string SetupPaymentCustomerCaseNumber => "M418718";
+    public string SetupPaymentCustomerMobile => "8973641163";
+    public string SetupPaymentCustomerAddress1 => "29 Torrington Square";
+    public string SetupPaymentCustomerAddress2 => "4 hengrove way";
+    public string SetupPaymentCustomerCity => "Bristol";
+    public string SetupPaymentCustomerPostcode => "CR0 2BT";
+    public string SetupPaymentCountryCode => "in";
+
+    // Setup Payment Plan specific conversation and payment data
+    public string SetupPaymentPlanCaseNumber => "M733678";
+    public string SetupPaymentPlanFollowUpMessage => "test";
+    public string SetupPaymentPlanInitialAmount => "20";
+    public string SetupPaymentCardholderName => "test";
+    public string SetupPaymentCardAddressLine => "test";
+    public string SetupPaymentCardCity => "test";
+    public string SetupPaymentCardPostCode => "nn2n 2nn";
+    public string SetupPaymentCardCountry => "United Kingdom";
+    public string SetupPaymentPhoneCountryCode => "+44-United Kingdom";
+    public string SetupPaymentCardMobile => "77081087963";
+    public string SetupPaymentCardEmail => "sriganth123@gmail.com";
+
     // Customer Contact Form Data (Post-Dispute)
 
-    public string CustomberCaseNumber => "M989029";
+    public string CustomberCaseNumber => "M989050";
     public string CustomerContactName => "Test";
     public string CustomerContactEmail => "Sriganth123@gmail.com";
 
     // Max Contact Flow Invalid Data
-    public string MaxContactInvalidFullName => "ew";
+    public string MaxContactInvalidFullName => "Sriganth M";
     public string MaxContactInvalidEnforcementRef => "ewe";
+
     public string MaxContactInvalidAddress1 => "ew";
     public string MaxContactInvalidAddress2 => "Enter Address Line 2";
     public string MaxContactInvalidAddress3 => "Enter Address Line 3";

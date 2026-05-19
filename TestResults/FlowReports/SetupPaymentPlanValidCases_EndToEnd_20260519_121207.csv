@@ -1,0 +1,12 @@
+StepName,ExpectedResult,ActualResult,Status,TimestampUtc
+"Open Marston Recovery URL","Marston Recovery page opens and chat iframe becomes available.","Open Marston Recovery URL completed successfully.","PASS","2026-05-19T06:39:49.0739262Z"
+"Open chatbot","Chat popup is visible after clicking chatbot icon.","Open chatbot completed successfully.","PASS","2026-05-19T06:39:49.7195091Z"
+"Click Setup a payment plan card","Setup a payment plan option is selected.","Click Setup a payment plan card completed successfully.","PASS","2026-05-19T06:39:50.3743401Z"
+"Open customer details form","ENTER DETAILS form is opened.","Open customer details form completed successfully.","PASS","2026-05-19T06:39:52.3219797Z"
+"Fill customer details","Customer details fields are populated with setup-payment test data.","Fill customer details completed successfully.","PASS","2026-05-19T06:39:57.4403917Z"
+"Submit customer details","SUBMIT DETAILS is accepted and chat is ready for next message.","Submit customer details completed successfully.","PASS","2026-05-19T06:39:58.0662038Z"
+"Send case number message","Message input accepts M733678 and sends it.","Send case number message completed successfully.","PASS","2026-05-19T06:39:59.2088356Z"
+"Send follow-up message","Message input accepts test and sends it.","Send follow-up message completed successfully.","PASS","2026-05-19T06:40:00.3597121Z"
+"Open payment-plan details form again","ENTER DETAILS opens payment-plan setup fields.","Open payment-plan details form again completed successfully.","PASS","2026-05-19T06:40:01.8246040Z"
+"Configure payment plan","Case number, amount, frequency, and day are selected and setup is submitted.","Configure payment plan completed successfully.","PASS","2026-05-19T06:40:06.5075046Z"
+"Fill card payment details","Card form is completed with configured payment details.","Could not resolve chat frame.","FAIL","2026-05-19T06:42:07.6541840Z"

@@ -101,7 +101,7 @@ public class BasePage
     /// <summary>
     /// Safe click with error handling and retry
     /// </summary>
-    protected async Task SafeClickAsync(ILocator locator, string elementName, int maxRetries = 3)
+    protected async Task SafeClickAsync(ILocator locator, string elementName, int maxRetries = 1)
     {
         await RetryAsync(async () =>
         {
@@ -118,7 +118,7 @@ public class BasePage
     /// <summary>
     /// Safe fill with error handling and retry
     /// </summary>
-    protected async Task SafeFillAsync(ILocator locator, string value, string elementName, int maxRetries = 3)
+    protected async Task SafeFillAsync(ILocator locator, string value, string elementName, int maxRetries = 1)
     {
         await RetryAsync(async () =>
         {

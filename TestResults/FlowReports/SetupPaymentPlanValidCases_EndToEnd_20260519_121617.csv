@@ -1,0 +1,13 @@
+StepName,ExpectedResult,ActualResult,Status,TimestampUtc
+"Open Marston Recovery URL","Marston Recovery page opens and chat iframe becomes available.","Open Marston Recovery URL completed successfully.","PASS","2026-05-19T06:45:13.8480534Z"
+"Open chatbot","Chat popup is visible after clicking chatbot icon.","Open chatbot completed successfully.","PASS","2026-05-19T06:45:18.4860047Z"
+"Click Setup a payment plan card","Setup a payment plan option is selected.","Click Setup a payment plan card completed successfully.","PASS","2026-05-19T06:45:24.1937509Z"
+"Open customer details form","ENTER DETAILS form is opened.","Open customer details form completed successfully.","PASS","2026-05-19T06:45:28.0722736Z"
+"Fill customer details","Customer details fields are populated with setup-payment test data.","Fill customer details completed successfully.","PASS","2026-05-19T06:45:33.8765430Z"
+"Submit customer details","SUBMIT DETAILS is accepted and chat is ready for next message.","Submit customer details completed successfully.","PASS","2026-05-19T06:45:34.5629755Z"
+"Send case number message","Message input accepts M733678 and sends it.","Send case number message completed successfully.","PASS","2026-05-19T06:45:35.7653360Z"
+"Send follow-up message","Message input accepts test and sends it.","Send follow-up message completed successfully.","PASS","2026-05-19T06:45:36.9348554Z"
+"Open payment-plan details form again","ENTER DETAILS opens payment-plan setup fields.","Open payment-plan details form again completed successfully.","PASS","2026-05-19T06:45:38.4913656Z"
+"Configure payment plan","Case number, amount, frequency, and day are selected and setup is submitted.","Configure payment plan completed successfully.","PASS","2026-05-19T06:45:43.3443251Z"
+"Fill card payment details","Card form is completed with configured payment details.","Fill card payment details completed successfully.","PASS","2026-05-19T06:45:51.8554457Z"
+"Complete payment and verify order confirmation","Payment is submitted and Order Confirmation is displayed.","Target page, context or browser has been closed","FAIL","2026-05-19T06:46:17.4011056Z"
